@@ -24,6 +24,7 @@ hs_err_pid*
 replay_pid*
 #don't push in python
 venv/
+.venv/
 __pycache__/
 .env
 *.log
