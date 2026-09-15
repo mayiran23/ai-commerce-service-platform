@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.mayiran.commerceservice.mapper.OrderMapper">
+
+
+    <select id="pageOrders" resultType="com.mayiran.commerceservice.vo.OrderVO">
+        SELECT o.order_no, o.user_id, u.nickname AS userNickname, o.status,
+               o.total_amount, o.pay_amount, o.pay_time, o.ship_time, o.receive_time,
+               o.receiver_name, o.receiver_phone, o.receiver_addr, o.create_time
+        FROM t_order o
+                 LEFT JOIN t_user u ON u.id = o.user_id
+
+        WHERE 1 = 1
+        <if test="status  != null and status  != ''">AND o.status  = #{status}</if>
+        <if test="userId  != null and userId  != ''">AND o.user_id = #{userId}</if>
+        <if test="keyword != null and keyword != ''">AND  ( o.order_no LIKE CONCAT('%', #{keyword}, '%')
+            OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
+            OR EXISTS (SELECT 1 FROM t_order_item i
+            WHERE i.order_no = o.order_no
+            AND i.product_name LIKE CONCAT('%', #{keyword}, '%')) )</if>
+        ORDER BY o.create_time DESC
+
+    </select>
+
+</mapper>

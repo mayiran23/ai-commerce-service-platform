@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · 智联商城智能客服平台</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="lg">
+      <span class="dot">智</span>
+      <h2>智联商城 · 智能客服平台</h2>
+    </div>
+    <div class="tip">订单查询 · 售后工单 · AI 客服对话</div>
+
+    <div id="err" class="err" style="display:none"></div>
+
+    <div class="field">
+      <label>用户名</label>
+      <input class="input" id="username" placeholder="如 user0001" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input class="input" id="password" type="password" placeholder="123456" autocomplete="current-password">
+    </div>
+
+    <div class="mt12" style="font-size:12px;color:var(--text-3)">测试账号（点一下自动填入）</div>
+    <div class="accts" id="accts"></div>
+
+    <button class="btn primary block" id="btnLogin" style="height:40px">登 录</button>
+
+    <div class="login-foot">
+      <div id="backend"></div>
+      <div class="mt8">密码统一 <code>123456</code>（数据库里存的是 BCrypt 密文）</div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/ui.js"></script>
+<script src="assets/mock_data.js"></script>
+<script src="assets/mock.js"></script>
+<script src="assets/api.js"></script>
+<script>
+/* ------------------------------------------------------------
+   登录页逻辑
+   对应接口：POST /api/auth/login   →  { token, user }
+   ------------------------------------------------------------ */
+
+/* 数据库里造数据时留的三个账号。万一 mock 文件被删了，这里还能兜底。 */
+var FALLBACK_ACCOUNTS = [
+  { username: 'user0001', nickname: '谢雨欣', role: 'USER',  roleText: '普通用户' },
+  { username: 'user0108', nickname: '郭思远', role: 'AGENT', roleText: '客服' },
+  { username: 'user0092', nickname: '何皓宇', role: 'ADMIN', roleText: '管理员' }
+];
+
+var accounts = (window.MOCK && window.MOCK.accounts && window.MOCK.accounts.length)
+  ? window.MOCK.accounts : FALLBACK_ACCOUNTS;
+
+var $u = UI.$('#username'), $p = UI.$('#password'), $e = UI.$('#err');
+
+/* 渲染三个快捷填充按钮 */
+UI.$('#accts').innerHTML = accounts.map(function (a) {
+  return '<button type="button" data-u="' + UI.esc(a.username) + '">'
+    + '<b>' + UI.esc(a.roleText || a.role) + '</b>'
+    + UI.esc(a.nickname || '') + ' / ' + UI.esc(a.username) + '</button>';
+}).join('');
+UI.$$('#accts button').forEach(function (b) {
+  b.onclick = function () {
+    $u.value = b.getAttribute('data-u');
+    $p.value = '123456';
+    $u.focus();
+  };
+});
+
+UI.$('#backend').textContent = '当前数据来源：' + Api.backendLabel();
+
+function showErr(msg) {
+  $e.textContent = msg;
+  $e.style.display = 'block';
+}
+
+function doLogin() {
+  var u = $u.value.trim(), p = $p.value;
+  if (!u || !p) { showErr('请填写用户名和密码'); return; }
+
+  var btn = UI.$('#btnLogin');
+  btn.disabled = true;
+  btn.textContent = '登录中…';
+  $e.style.display = 'none';
+
+  Api.login(u, p).then(function (user) {
+    UI.toast('欢迎回来，' + (user.nickname || user.username), 'ok');
+    /* 普通用户进订单页，客服/管理员进工单页 */
+    setTimeout(function () {
+      location.href = (user.role === 'USER') ? 'orders.html' : 'tickets.html';
+    }, 300);
+  }).catch(function (err) {
+    showErr(err.message || '登录失败');
+    btn.disabled = false;
+    btn.textContent = '登 录';
+  });
+}
+
+UI.$('#btnLogin').onclick = doLogin;
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') doLogin();
+});
+
+/* 已经登录过就直接填上，省得每次重输 */
+var last = Api.getUser();
+if (last) { $u.value = last.username; $p.value = '123456'; }
+</script>
+</body>
+</html>

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订单管理 · 智联商城智能客服平台</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="content">
+    <header class="topbar" id="topbar"></header>
+
+    <div class="page">
+
+      <!-- KPI：点一下等于按状态筛选 -->
+      <div class="kpis" id="kpis"></div>
+
+      <div class="card">
+        <div class="toolbar">
+          <div class="field">
+            <label>关键词</label>
+            <input class="input wide" id="kw" placeholder="订单号 / 用户昵称 / 商品名">
+          </div>
+          <div class="field">
+            <label>订单状态</label>
+            <select class="select" id="status">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>退货资格</label>
+            <select class="select" id="elig" style="min-width:110px">
+              <option value="">全部</option>
+              <option value="eligible">有资格</option>
+              <option value="soon">即将到期</option>
+              <option value="expired">已超期</option>
+            </select>
+          </div>
+          <div class="field" id="userField">
+            <label>用户 ID</label>
+            <input class="input" id="userId" style="width:100px" placeholder="如 1">
+          </div>
+          <div class="field">
+            <label>每页</label>
+            <select class="select" id="limit" style="min-width:80px">
+              <option>10</option><option>20</option><option>50</option>
+            </select>
+          </div>
+          <button class="btn primary" id="btnSearch">查询</button>
+          <button class="btn" id="btnReset">重置</button>
+          <span class="spacer"></span>
+        </div>
+
+        <div class="table-wrap">
+          <table class="tb">
+            <thead>
+              <tr>
+                <th>订单号</th>
+                <th>用户</th>
+                <th>商品</th>
+                <th class="num">实付金额</th>
+                <th>状态</th>
+                <th>下单时间</th>
+                <th>签收时间</th>
+                <th>退货资格</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="pager" id="pager"></div>
+      </div>
+
+      <div id="hint"></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/ui.js"></script>
+<script src="assets/mock_data.js"></script>
+<script src="assets/mock.js"></script>
+<script src="assets/api.js"></script>
+<script>
+/* ------------------------------------------------------------
+   订单管理页
+   对应接口：
+     GET /api/orders                 列表（分页 + 状态 + 关键词 + 用户）
+     GET /api/orders/{orderNo}       详情（含明细 + 物流）
+     GET /api/stats/orders           顶部状态统计
+   ------------------------------------------------------------ */
+
+if (!UI.requireLogin()) throw new Error('未登录');
+
+var me = UI.getUser() || {};
+var isAgent = (me.role === 'AGENT' || me.role === 'ADMIN');
+
+UI.shell({ active: 'orders', title: '订单管理',
+  sub: isAgent ? '客服视角：可查看全部用户订单' : '用户视角：只能看到自己的订单' });
+
+/* 用户只能看自己的，客服可以按用户筛 —— 与后端 RBAC 一致 */
+if (!isAgent) UI.$('#userField').style.display = 'none';
+
+/* 状态下拉框从状态字典生成，避免手写漏一个 */
+UI.$('#status').innerHTML = '<option value="">全部</option>'
+  + Object.keys(SM.ORDER_STATUS_TEXT).map(function (k) {
+      return '<option value="' + k + '">' + SM.ORDER_STATUS_TEXT[k] + '</option>';
+    }).join('');
+
+var state = { page: 1, limit: 10, keyword: '', status: '', userId: isAgent ? '' : (me.id || ''), eligibility: '' };
+
+function resetState() {
+  state = { page: 1, limit: 10, keyword: '', status: '', eligibility: '',
+            userId: isAgent ? '' : (me.id || '') };
+}
+
+/* ---------------- 列表 ---------------- */
+function load() {
+  UI.$('#rows').innerHTML = UI.loadingRow(9);
+  Api.get('/api/orders', {
+    page: state.page, limit: state.limit, keyword: state.keyword,
+    status: state.status, userId: state.userId, eligibility: state.eligibility
+  }).then(function (data) {
+    render(data);
+  }).catch(function (e) {
+    UI.$('#rows').innerHTML = UI.emptyRow(9, '加载失败', e.message);
+  });
+}
+
+function render(data) {
+  var rows = data.records || [];
+  if (!rows.length) {
+    UI.$('#rows').innerHTML = UI.emptyRow(9, '没有符合条件的订单', '换个关键词或把状态改回「全部」试试');
+  } else {
+    UI.$('#rows').innerHTML = rows.map(function (o) {
+      var qty = (o.items || []).reduce(function (s, i) { return s + i.quantity; }, 0);
+      var first = (o.items || [])[0] || {};
+      var summary = UI.esc(first.productName || '-')
+        + (o.items.length > 1 ? ' <span class="muted">等 ' + o.items.length + ' 种</span>' : '')
+        + ' <span class="muted">/ 共 ' + qty + ' 件</span>';
+      return '<tr class="clickable" data-no="' + UI.esc(o.orderNo) + '">'
+        + '<td class="mono">' + UI.esc(o.orderNo) + '</td>'
+        + '<td>' + UI.esc(o.userNickname || '-') + '<div class="muted" style="font-size:12px">ID ' + o.userId + '</div></td>'
+        + '<td style="max-width:260px">' + summary + '</td>'
+        + '<td class="num">' + UI.money(o.payAmount) + '</td>'
+        + '<td>' + UI.orderBadge(o.status) + '</td>'
+        + '<td class="nowrap">' + UI.dt(o.createTime, true) + '</td>'
+        + '<td class="nowrap">' + (o.receiveTime ? UI.dt(o.receiveTime, true) : '<span class="muted">-</span>') + '</td>'
+        + '<td>' + worstEligBadge(o) + '</td>'
+        + '<td class="acts"><button class="btn sm" data-detail="' + UI.esc(o.orderNo) + '">详情</button></td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  UI.pager(UI.$('#pager'), {
+    total: data.total, page: state.page, limit: state.limit,
+    onChange: function (p) { state.page = p; load(); }
+  });
+
+  /* 整行可点 + 详情按钮，都打开同一个抽屉 */
+  UI.$$('#rows tr.clickable').forEach(function (tr) {
+    tr.onclick = function (e) {
+      var no = e.target.getAttribute && e.target.getAttribute('data-detail');
+      openDetail(no || tr.getAttribute('data-no'));
+    };
+  });
+}
+
+/** 一张订单可能有多件商品，各自的退货截止时间相同（同一天签收）。
+ *  这里取"最紧急"的那一件来显示，让人一眼看到优先级。 */
+function worstEligBadge(o) {
+  if (!o.items || !o.items.length) return '<span class="muted">-</span>';
+  var sorted = o.items.slice().sort(function (a, b) {
+    return (a.hoursLeft === null ? 1e9 : a.hoursLeft) - (b.hoursLeft === null ? 1e9 : b.hoursLeft);
+  });
+  return UI.eligBadge(sorted[0]);
+}
+
+/* ---------------- 顶部统计 ---------------- */
+function loadStats() {
+  Api.get('/api/stats/orders').then(function (s) {
+    var b = s.byStatus || {};
+    var cards = [
+      { label: '全部订单', value: s.total, status: '' },
+      { label: '待付款',   value: b.PENDING_PAY || 0, status: 'PENDING_PAY' },
+      { label: '运输中',   value: b.DELIVERING || 0,  status: 'DELIVERING' },
+      { label: '已签收',   value: b.RECEIVED || 0,    status: 'RECEIVED' }
+    ];
+    UI.$('#kpis').innerHTML = cards.map(function (c) {
+      return '<div class="kpi ' + (state.status === c.status ? 'on' : '') + '" data-st="' + c.status + '">'
+        + '<div class="k">' + c.label + '</div>'
+        + '<div class="v">' + c.value + '<small> 单</small></div></div>';
+    }).join('');
+    UI.$$('#kpis .kpi').forEach(function (el) {
+      el.onclick = function () {
+        state.status = el.getAttribute('data-st');
+        state.page = 1;
+        UI.$('#status').value = state.status;
+        loadStats(); load();
+      };
+    });
+  }).catch(function () { /* 统计失败不阻塞列表 */ });
+}
+
+/* ---------------- 详情抽屉 ---------------- */
+function openDetail(orderNo) {
+  UI.openDrawer({ title: '订单详情', body: '<div class="loading"><div class="spinner"></div>加载中…</div>' });
+  Api.get('/api/orders/' + encodeURIComponent(orderNo)).then(function (o) {
+    UI.openDrawer({
+      title: '订单 ' + UI.esc(o.orderNo) + '　' + UI.orderBadge(o.status),
+      body: detailHtml(o),
+      footer: footerHtml(o),
+      onClose: function () {}
+    });
+    UI.$$('#dwFoot [data-act]').forEach(function (b) {
+      b.onclick = function () {
+        var act = b.getAttribute('data-act');
+        if (act === 'chat') {
+          /* 带着订单号跳到对话页，让 AI 接着处理 */
+          location.href = 'chat.html?orderNo=' + encodeURIComponent(o.orderNo);
+        } else if (act === 'copy') {
+          var ta = document.createElement('textarea');
+          ta.value = o.orderNo; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); UI.toast('订单号已复制', 'ok'); }
+          catch (e) { UI.toast('复制失败，请手动选择', 'err'); }
+          ta.remove();
+        }
+      };
+    });
+  }).catch(function (e) {
+    UI.openDrawer({ title: '订单详情', body: '<div class="empty"><div class="big">加载失败</div><div>' + UI.esc(e.message) + '</div></div>' });
+  });
+}
+
+function detailHtml(o) {
+  /* 明细：小计 = 单价 × 数量，最后一列显示该商品的退货资格 */
+  var items = (o.items || []).map(function (it) {
+    return '<tr>'
+      + '<td>' + UI.esc(it.productName) + '<div class="muted" style="font-size:12px">商品 ID ' + it.productId + '</div></td>'
+      + '<td class="num">' + UI.money(it.price) + '</td>'
+      + '<td class="num">×' + it.quantity + '</td>'
+      + '<td class="num">' + UI.money(it.price * it.quantity) + '</td>'
+      + '<td class="nowrap">' + (it.refundDeadline ? UI.dt(it.refundDeadline, true) : '<span class="muted">-</span>') + '</td>'
+      + '<td>' + UI.eligBadge(it) + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var lg = o.logistics;
+  var logistics = lg
+    ? '<div class="steps">'
+      + step('已发货', UI.dt(o.shipTime, true), true, false)
+      + step('运输中', lg.currentNode || '', true, isNow(lg.currentStatus, ['运输中', '派送中']))
+      + step('已签收', o.receiveTime ? UI.dt(o.receiveTime, true) : '', !!o.receiveTime, false)
+      + '</div>'
+      + '<div class="dl mt12"><dt>运单号</dt><dd class="mono">' + UI.esc(lg.trackNo || '-') + '</dd>'
+      + '<dt>当前节点</dt><dd>' + UI.esc(lg.currentNode || '-') + '　'
+      + '<span class="badge line">' + UI.esc(lg.currentStatus || '') + '</span></dd>'
+      + '<dt>预计送达</dt><dd>' + UI.esc(lg.estimatedArrival || '-') + '</dd></div>'
+    : '<div class="empty">该订单暂无物流信息</div>';
+
+  return ''
+    + '<div class="card"><div class="card-hd"><h3>订单信息</h3></div><div class="card-bd">'
+    + '<div class="dl">'
+    + '<dt>订单号</dt><dd class="mono">' + UI.esc(o.orderNo) + '</dd>'
+    + '<dt>下单用户</dt><dd>' + UI.esc(o.userNickname || '-') + ' <span class="muted">(ID ' + o.userId + ')</span></dd>'
+    + '<dt>收货人</dt><dd>' + UI.esc(o.receiverName || '-') + '　' + UI.esc(o.receiverPhone || '') + '</dd>'
+    + '<dt>收货地址</dt><dd>' + UI.esc(o.receiverAddr || '-') + '</dd>'
+    + '<dt>下单时间</dt><dd>' + UI.dt(o.createTime) + '</dd>'
+    + '<dt>付款时间</dt><dd>' + UI.dt(o.payTime) + '</dd>'
+    + '<dt>发货时间</dt><dd>' + UI.dt(o.shipTime) + '</dd>'
+    + '<dt>签收时间</dt><dd>' + UI.dt(o.receiveTime) + '</dd>'
+    + '<dt>订单金额</dt><dd>' + UI.money(o.totalAmount) + '　实付 <b>' + UI.money(o.payAmount) + '</b></dd>'
+    + '</div></div></div>'
+
+    + '<div class="card"><div class="card-hd"><h3>商品明细</h3>'
+    + '<div class="right muted" style="font-size:12px">退货资格 = 签收后 7 天</div></div>'
+    + '<div class="card-bd tight"><div class="table-wrap"><table class="tb"><thead><tr>'
+    + '<th>商品</th><th class="num">单价</th><th class="num">数量</th><th class="num">小计</th>'
+    + '<th>退货截止</th><th>资格</th></tr></thead><tbody>' + items + '</tbody></table></div></div></div>'
+
+    + '<div class="card"><div class="card-hd"><h3>物流信息</h3></div>'
+    + '<div class="card-bd">' + logistics + '</div></div>';
+}
+
+function step(name, sub, done, cur) {
+  return '<div class="step ' + (cur ? 'cur' : (done ? 'done' : '')) + '">'
+    + '<div class="rail"><span class="dot"></span><span class="bar"></span></div>'
+    + '<div class="body"><div class="t1">' + UI.esc(name) + '</div>'
+    + '<div class="t2">' + UI.esc(sub || '') + '</div></div></div>';
+}
+function isNow(cur, list) { return list.indexOf(cur) >= 0; }
+
+function footerHtml(o) {
+  var hasElapsed = (o.items || []).some(function (it) { return it.refundEligible === false; });
+  return '<span class="muted" style="font-size:12px">'
+    + (hasElapsed ? '有商品已超退货期，申请售后会转人工审核' : '退货资格校验由后端计算')
+    + '</span>'
+    + '<span style="flex:1"></span>'
+    + '<button class="btn" data-act="copy">复制订单号</button>'
+    + '<button class="btn primary" data-act="chat">去问智能客服</button>';
+}
+
+/* ---------------- 事件绑定 ---------------- */
+UI.$('#btnSearch').onclick = function () {
+  state.keyword = UI.$('#kw').value.trim();
+  state.status = UI.$('#status').value;
+  state.eligibility = UI.$('#elig').value;
+  state.userId = isAgent ? UI.$('#userId').value.trim() : (me.id || '');
+  state.limit = parseInt(UI.$('#limit').value, 10);
+  state.page = 1;
+  load(); loadStats();
+};
+UI.$('#btnReset').onclick = function () {
+  UI.$('#kw').value = ''; UI.$('#status').value = ''; UI.$('#userId').value = '';
+  UI.$('#elig').value = ''; UI.$('#limit').value = '10';
+  resetState();
+  load(); loadStats();
+};
+UI.$('#kw').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') UI.$('#btnSearch').click();
+});
+UI.$('#limit').onchange = function () {
+  state.limit = parseInt(this.value, 10); state.page = 1; load();
+};
+
+UI.$('#hint').innerHTML = UI.apiHint([
+  'GET /api/orders', 'GET /api/orders/{orderNo}', 'GET /api/stats/orders'
+]);
+
+/* 首次加载 */
+load(); loadStats();
+</script>
+</body>
+</html>

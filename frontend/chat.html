@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智能客服 · 智联商城智能客服平台</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="content">
+    <header class="topbar" id="topbar"></header>
+
+    <div class="page">
+      <div class="chat-layout">
+
+        <!-- 左：会话列表 -->
+        <div class="chat-col chat-sess">
+          <div class="card">
+            <div class="card-hd">
+              <h3>会话</h3>
+              <div class="right">
+                <button class="btn sm" id="btnNewSess">新建</button>
+              </div>
+            </div>
+            <div class="sess-list" id="sessList"></div>
+          </div>
+        </div>
+
+        <!-- 中：对话区 -->
+        <div class="chat-col">
+          <div class="chat-main">
+            <div class="chat-hd">
+              <b id="sessTitle">—</b>
+              <span class="badge line" id="sessUser">—</span>
+              <div class="right muted" style="font-size:12px" id="backendTag"></div>
+            </div>
+            <div class="msgs" id="msgs"></div>
+            <div class="composer">
+              <div class="quick" id="quick"></div>
+              <div class="in-row">
+                <textarea id="input" placeholder="输入问题，回车发送（Shift + 回车换行）"></textarea>
+                <button class="btn primary" id="btnSend" style="height:42px;padding:0 20px">发送</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右：上下文面板 -->
+        <div class="chat-col chat-ctx">
+          <div class="card">
+            <div class="card-hd"><h3>上下文</h3></div>
+            <div class="card-bd" id="ctx"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div id="hint" class="mt12"></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/ui.js"></script>
+<script src="assets/mock_data.js"></script>
+<script src="assets/mock.js"></script>
+<script src="assets/api.js"></script>
+<script>
+/* ------------------------------------------------------------
+   智能客服对话页
+   对应接口：
+     GET  /api/chat/sessions          会话列表
+     POST /api/chat/sessions          新建会话
+     GET  /api/chat/history           某会话的历史消息
+     POST /api/chat                   发一句话，拿 AI 回复（Java 转发到 Python）
+   ------------------------------------------------------------ */
+
+if (!UI.requireLogin()) throw new Error('未登录');
+
+var me = UI.getUser() || {};
+UI.shell({ active: 'chat', title: '智能客服',
+  sub: '对话由 Java 转发给 Python AI 服务，userId 由后端从 JWT 解析' });
+
+var INTENT_TEXT = {
+  ORDER_QUERY: '查订单/物流',
+  AFTER_SALE_APPLY: '申请售后',
+  POLICY_QA: '政策咨询',
+  OTHER: '其他'
+};
+var INTENT_CLS = {
+  ORDER_QUERY: 'info', AFTER_SALE_APPLY: 'warn', POLICY_QA: 'ok', OTHER: 'muted'
+};
+
+var QUICK = [
+  '我的订单到哪了',
+  '我要退货',
+  '七天无理由怎么算',
+  '退货运费谁出',
+  '你好'
+];
+
+UI.$('#backendTag').textContent = Api.backendLabel();
+UI.$('#quick').innerHTML = QUICK.map(function (q) {
+  return '<button type="button">' + UI.esc(q) + '</button>';
+}).join('');
+UI.$$('#quick button').forEach(function (b) {
+  b.onclick = function () { UI.$('#input').value = b.textContent; send(); };
+});
+
+var cur = { sessionId: null, userName: null };
+
+/* ---------------- 会话列表 ---------------- */
+function loadSessions(selectFirst) {
+  Api.get('/api/chat/sessions').then(function (list) {
+    if (!list || !list.length) {
+      UI.$('#sessList').innerHTML = '<div class="empty">还没有会话<br>点右上角「新建」开始</div>';
+      return;
+    }
+    UI.$('#sessList').innerHTML = list.map(function (s) {
+      return '<div class="sess ' + (cur.sessionId === s.sessionId ? 'on' : '') + '" data-id="' + UI.esc(s.sessionId) + '">'
+        + '<div class="l1"><b>' + UI.esc(s.userName || '') + '</b>'
+        + '<span class="no">' + UI.ago(s.updateTime) + '</span></div>'
+        + '<div class="l2">' + UI.esc(s.title || s.lastMessage || '') + '</div>'
+        + '</div>';
+    }).join('');
+    UI.$$('#sessList .sess').forEach(function (el) {
+      el.onclick = function () { openSession(el.getAttribute('data-id')); };
+    });
+    if (selectFirst && !cur.sessionId && list.length) openSession(list[0].sessionId);
+  }).catch(function (e) {
+    UI.$('#sessList').innerHTML = '<div class="empty">' + UI.esc(e.message) + '</div>';
+  });
+}
+
+function openSession(id) {
+  cur.sessionId = id;
+  UI.$$('#sessList .sess').forEach(function (el) {
+    el.classList.toggle('on', el.getAttribute('data-id') === id);
+  });
+  Api.get('/api/chat/history', { sessionId: id }).then(function (msgs) {
+    renderMessages(msgs || []);
+    var s = (window.MOCK && window.MOCK.sessions || []).filter(function (x) {
+      return x.sessionId === id;
+    })[0];
+    UI.$('#sessTitle').textContent = s ? (s.title || '会话') : '会话';
+    UI.$('#sessUser').textContent = s ? (s.userName + ' / ID ' + s.userId) : id;
+    cur.userName = s ? s.userName : '';
+    renderCtx(msgs || [], s);
+  }).catch(function (e) {
+    UI.toast(e.message, 'err');
+  });
+}
+
+/* ---------------- 消息渲染 ---------------- */
+function renderMessages(msgs) {
+  var box = UI.$('#msgs');
+  if (!msgs.length) {
+    box.innerHTML = '<div class="empty"><div class="big">开始一段对话</div>'
+      + '<div>试试问「我的订单到哪了」或「我要退货」</div></div>';
+    return;
+  }
+  box.innerHTML = msgs.map(function (m) { return msgHtml(m); }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function msgHtml(m) {
+  var isUser = m.role === 'user';
+  var meta = '';
+  if (!isUser) {
+    var it = INTENT_TEXT[m.intent] || m.intent || '';
+    var cls = INTENT_CLS[m.intent] || 'muted';
+    meta = '<div class="meta">'
+      + '<span class="badge ' + cls + '">意图：' + UI.esc(it) + '</span>'
+      + (m.confidence !== undefined && m.confidence !== null
+          ? '<span>置信度 ' + Math.round(m.confidence * 100) + '%</span>' : '')
+      + (m.latencyMs ? '<span>' + m.latencyMs + ' ms</span>' : '')
+      + '</div>';
+  }
+  return '<div class="msg ' + (isUser ? 'me' : 'bot') + '">'
+    + '<div class="who">' + (isUser ? UI.esc((me.nickname || '我').slice(0, 1)) : 'AI') + '</div>'
+    + '<div class="bubble-wrap">' + meta
+    + '<div class="bubble">' + UI.esc(m.content) + '</div>'
+    + toolsHtml(m) + '</div></div>';
+}
+
+/** 把 AI 调用工具的过程显示出来 —— 这是整个项目最值得展示的部分 */
+function toolsHtml(m) {
+  if (!m.tools || !m.tools.length) {
+    if (m.note) {
+      return '<div class="tools"><div class="th">未调用工具</div>'
+        + '<div class="kv">' + UI.esc(m.note) + '</div></div>';
+    }
+    return '';
+  }
+  return '<div class="tools"><div class="th">工具调用（' + m.tools.length + ' 次）</div>'
+    + m.tools.map(function (t) {
+        return '<div><span class="tool-chip">' + UI.esc(t.name)
+          + '<span class="st">' + (t.status === 'ok' ? '✓' : '✗') + '</span>'
+          + '<span class="muted">' + (t.ms || 0) + 'ms</span></span>'
+          + (t.result ? '<div class="kv">→ ' + UI.esc(t.result) + '</div>' : '')
+          + '<div class="kv">参数 ' + UI.esc(JSON.stringify(t.args || {})) + '</div>'
+          + '</div>';
+      }).join('')
+    + (m.note ? '<div class="kv mt8">' + UI.esc(m.note) + '</div>' : '')
+    + '</div>';
+}
+
+/* ---------------- 右侧上下文面板 ---------------- */
+function renderCtx(msgs, sess) {
+  /* 汇总本会话里出现过的所有工具调用 */
+  var calls = [];
+  msgs.forEach(function (m) {
+    (m.tools || []).forEach(function (t) { calls.push(t); });
+  });
+  var toolBlock = calls.length
+    ? calls.map(function (t) {
+        return '<div class="ctx-item"><div class="k">' + UI.esc(t.name) + '</div>'
+          + '<div>' + UI.esc(t.result || '-') + '</div>'
+          + '<div class="k">' + (t.ms || 0) + ' ms</div></div>';
+      }).join('')
+    : '<div class="muted" style="font-size:12.5px">本会话还没有工具调用</div>';
+
+  UI.$('#ctx').innerHTML =
+    '<div class="ctx-sec"><h4>会话</h4>'
+    + '<div class="ctx-item"><div class="k">会话 ID</div><div class="mono">' + UI.esc(cur.sessionId || '-') + '</div></div>'
+    + (sess ? '<div class="ctx-item"><div class="k">用户</div><div>' + UI.esc(sess.userName)
+        + ' <span class="muted">ID ' + sess.userId + '</span></div></div>' : '')
+    + '</div>'
+    + '<div class="ctx-sec"><h4>最近订单（点击查看）</h4><div id="ctxOrders">'
+    + '<div class="muted" style="font-size:12.5px">加载中…</div></div></div>'
+    + '<div class="ctx-sec"><h4>工具调用记录</h4>' + toolBlock + '</div>';
+
+  Api.get('/api/orders', { limit: 4 }).then(function (d) {
+    var rows = (d.records || []).map(function (o) {
+      return '<div class="ctx-item clickable" data-no="' + UI.esc(o.orderNo) + '">'
+        + '<div class="mono" style="font-size:12px">' + UI.esc(o.orderNo) + '</div>'
+        + '<div>' + UI.esc(((o.items || [])[0] || {}).productName || '-')
+        + ' ' + UI.orderBadge(o.status) + '</div></div>';
+    }).join('') || '<div class="muted" style="font-size:12.5px">没有订单</div>';
+    var box = UI.$('#ctxOrders');
+    if (box) {
+      box.innerHTML = rows;
+      UI.$$('#ctxOrders .ctx-item').forEach(function (el) {
+        el.onclick = function () {
+          UI.$('#input').value = '订单 ' + el.getAttribute('data-no') + ' 到哪了';
+          send();
+        };
+      });
+    }
+  }).catch(function () {
+    var box = UI.$('#ctxOrders');
+    if (box) box.innerHTML = '<div class="muted" style="font-size:12.5px">订单加载失败</div>';
+  });
+}
+
+/* ---------------- 发送 ---------------- */
+function send() {
+  var input = UI.$('#input');
+  var text = input.value.trim();
+  if (!text) return;
+
+  var box = UI.$('#msgs');
+  if (box.querySelector('.empty')) box.innerHTML = '';
+
+  /* 先把用户这条贴上去，再等后端，体验更像真的聊天 */
+  box.insertAdjacentHTML('beforeend',
+    '<div class="msg me"><div class="who">' + UI.esc((me.nickname || '我').slice(0, 1)) + '</div>'
+    + '<div class="bubble-wrap"><div class="bubble">' + UI.esc(text) + '</div></div></div>');
+  box.insertAdjacentHTML('beforeend',
+    '<div class="msg bot" id="pending"><div class="who">AI</div>'
+    + '<div class="bubble-wrap"><div class="bubble"><span class="muted">思考中…</span></div></div></div>');
+  box.scrollTop = box.scrollHeight;
+  input.value = '';
+  UI.$('#btnSend').disabled = true;
+
+  Api.post('/api/chat', { sessionId: cur.sessionId, message: text }).then(function (res) {
+    cur.sessionId = res.sessionId;
+    var pending = UI.$('#pending');
+    if (pending) pending.remove();
+    box.insertAdjacentHTML('beforeend', msgHtml({
+      role: 'assistant', content: res.answer, intent: res.intent,
+      confidence: res.confidence, latencyMs: res.latencyMs, tools: res.tools || []
+    }));
+    box.scrollTop = box.scrollHeight;
+    loadSessions(false);
+    Api.get('/api/chat/history', { sessionId: cur.sessionId }).then(function (msgs) {
+      renderCtx(msgs || []);
+    });
+  }).catch(function (e) {
+    var pending = UI.$('#pending');
+    if (pending) pending.remove();
+    UI.toast(e.message || '发送失败', 'err');
+  }).then(function () {
+    UI.$('#btnSend').disabled = false;
+    input.focus();
+  });
+}
+
+UI.$('#btnSend').onclick = send;
+UI.$('#input').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+UI.$('#btnNewSess').onclick = function () {
+  Api.post('/api/chat/sessions', { userId: me.id, userName: me.nickname }).then(function (r) {
+    UI.toast('已新建会话', 'ok');
+    cur.sessionId = r.sessionId;
+    UI.$('#msgs').innerHTML = '';
+    UI.$('#sessTitle').textContent = '新会话';
+    loadSessions(false);
+    openSession(r.sessionId);
+  }).catch(function (e) { UI.toast(e.message, 'err'); });
+};
+
+UI.$('#hint').innerHTML = UI.apiHint([
+  'GET /api/chat/sessions', 'POST /api/chat/sessions',
+  'GET /api/chat/history', 'POST /api/chat'
+]);
+
+/* 从订单页带 orderNo 跳过来时，自动填好问题 */
+var preOrder = UI.qs('orderNo', '');
+if (preOrder) UI.$('#input').value = '订单 ' + preOrder + ' 到哪了';
+
+/* 首次加载 */
+loadSessions(true);
+inputFocus();
+function inputFocus() { setTimeout(function () { UI.$('#input').focus(); }, 100); }
+</script>
+</body>
+</html>

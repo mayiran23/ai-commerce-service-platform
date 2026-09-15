@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="D0ZpVqbEH4BZPmlJ96rmYI">
+<head data-page-node-id="91l1RMneL2ACHyZCIGXS1s">
+<meta charset="UTF-8" data-page-node-id="TVbTGtO8Rs8OUBMdmJ4BrG">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="H7lmJjbwbh0U4l3CdgfyZH">
+<title>售后工单 · 智联商城智能客服平台</title>
+<link rel="stylesheet" href="assets/app.css" data-page-node-id="R2HXLbbMZ9usmy9ztHfk2C">
+</head>
+<body data-page-node-id="Tb7FoTHNcDiCVEYs8EV7Pc">
+
+<div class="layout" data-page-node-id="zru43Wt9lTKNrCDeo4Jo8x">
+  <aside class="sidebar" id="sidebar" data-page-node-id="A2gjckBERu7w4HgdsMWC8m"></aside>
+  <div class="content" data-page-node-id="vfDIsArxMLSXTyc9QlskXN">
+    <header class="topbar" id="topbar" data-page-node-id="730HH2TcnVx8dCB9CXCq6D"></header>
+
+    <div class="page" data-page-node-id="1Pi5uortniRDWzvSHW7xPT">
+
+      <div class="kpis" id="kpis" data-page-node-id="66l9zZC4XFkrRB4G2mALQz"></div>
+
+      <div class="card" data-page-node-id="WjLo5mJaf4HGRUjYOLOpMI">
+        <div class="toolbar" data-page-node-id="O14Ex3wi3cfPSovs4l3u3w">
+          <div class="field" data-page-node-id="atnRxriqVHeyojie7sMKPK">
+            <label data-page-node-id="gldMhKA8ugcKvAWXQZPW95">关键词</label>
+            <input class="input wide" id="kw" placeholder="工单号 / 订单号 / 商品名" data-page-node-id="HONIIHi2aVdMXNjyVpVefR">
+          </div>
+          <div class="field" data-page-node-id="MVCZcBdH2y2C0ya8hckGPO">
+            <label data-page-node-id="uk7sCARtQ3gwRsPq24wT58">工单状态</label>
+            <select class="select" id="status" data-page-node-id="dLdecvCjCx1RlyEbK3MWrc"><option value="" data-page-node-id="JcMTIYmw1XdGSwFwOFP2hp">全部</option></select>
+          </div>
+          <div class="field" data-page-node-id="HUzhV1SvjV3BokOrggAlwt">
+            <label data-page-node-id="FBHKTHXojcmirdqaVQZzem">来源</label>
+            <select class="select" id="source" style="min-width:100px" data-page-node-id="oN7jGeIQ83uZ74vgh9OyA9">
+              <option value="" data-page-node-id="IQAfwtFNQ4aOJw79jIU2bX">全部</option>
+              <option value="AI" data-page-node-id="98QiHrUq27F55C5RBohkM6">AI 创建</option>
+              <option value="WEB" data-page-node-id="MpKQYB7IVHrPdq1VH47yem">用户自助</option>
+            </select>
+          </div>
+          <div class="field" data-page-node-id="fImdUqMDOnJxe6042CUR51">
+            <label data-page-node-id="KeWLaCEIp4bP0WWEjg2mG6">每页</label>
+            <select class="select" id="limit" style="min-width:80px" data-page-node-id="BYo6HrBPiYSVDD67aWG814">
+              <option data-page-node-id="DJbwj4hnxjcVaP6x8BREft">10</option><option data-page-node-id="XDWVWx1w2GoSnCkAj4FWMk">20</option><option data-page-node-id="Czk6wUA9LlJII3qL4YS6M6">50</option>
+            </select>
+          </div>
+          <button class="btn primary" id="btnSearch" data-page-node-id="y9uy86Tim2hlSoq1Oj0zN6">查询</button>
+          <button class="btn" id="btnReset" data-page-node-id="CpF9kc24mUNsazPTNa3Amr">重置</button>
+          <span class="spacer" data-page-node-id="piQxuBGfIYAVkCf52D1e7C"></span>
+        </div>
+
+        <div class="table-wrap" data-page-node-id="C2E9HdiQfq72l9c0tEKujy">
+          <table class="tb" data-page-node-id="U9twSaakIgZ0yjHZmYrSO3">
+            <thead data-page-node-id="F4jWl2FiEuunrD9li26Sq8">
+              <tr data-page-node-id="Uep25NsP5fHyTY72BmUBZ5">
+                <th data-page-node-id="EBpocvvtXINzZg8Tnxeoxw">工单号</th>
+                <th data-page-node-id="NCFLZtb6RsBRBgcRPq8Z6M">订单号</th>
+                <th data-page-node-id="T21RFv7xC3WB6qRR0OtbK6">商品</th>
+                <th data-page-node-id="MqEnAtpPM7n9koGJyPjwcT">类型</th>
+                <th style="min-width:200px" data-page-node-id="ivuuf56TEDxRgJMSh2zNH7">申请原因</th>
+                <th data-page-node-id="gBdBPN520pheDHps334grk">状态</th>
+                <th data-page-node-id="OxFbb2V1BgxFmRSIYOmgy9">来源</th>
+                <th data-page-node-id="hJDKhOjmrKPyQHwaAJcLTU">处理人</th>
+                <th data-page-node-id="RpWreMYkzkbc1qUgM8M1Uq">创建时间</th>
+                <th data-page-node-id="dlNGrbw9tB8QkiwCmoc45v">操作</th>
+              </tr>
+            </thead>
+            <tbody id="rows" data-page-node-id="fSumQZUczcAgeGFXmT5Qt2"></tbody>
+          </table>
+        </div>
+        <div class="pager" id="pager" data-page-node-id="UTrLjXAEuY23ZsocfiiYex"></div>
+      </div>
+
+      <div id="hint" data-page-node-id="rorGtMLMgOeamHrG24HxIY"></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/ui.js"></script>
+<script src="assets/mock_data.js"></script>
+<script src="assets/mock.js"></script>
+<script src="assets/api.js"></script>
+<script>
+/* ------------------------------------------------------------
+   售后工单页（客服 / 管理员）
+   对应接口：
+     GET  /api/after-sales                      列表（含各状态统计）
+     GET  /api/after-sales/{ticketNo}           详情（含流转记录）
+     POST /api/after-sales/{ticketNo}/transition 状态流转
+   ------------------------------------------------------------ */
+
+if (!UI.requireLogin()) throw new Error('未登录');
+
+var me = UI.getUser() || {};
+if (me.role === 'USER') {
+  /* 普通用户看不到工单管理页，直接送去自己的订单页 */
+  location.replace('orders.html');
+}
+
+UI.shell({ active: 'tickets', title: '售后工单',
+  sub: '客服视角：审核、驳回、推进退款' });
+
+UI.$('#status').innerHTML = '<option value="">全部</option>'
+  + Object.keys(SM.TICKET_STATUS_TEXT).map(function (k) {
+      return '<option value="' + k + '">' + SM.TICKET_STATUS_TEXT[k] + '</option>';
+    }).join('');
+
+var state = { page: 1, limit: 10, keyword: '', status: '', source: '' };
+var lastStats = {};
+
+/* ---------------- 列表 ---------------- */
+function load() {
+  UI.$('#rows').innerHTML = UI.loadingRow(10);
+  Api.get('/api/after-sales', state).then(function (data) {
+    lastStats = data.stats || {};
+    render(data);
+    renderKpis();
+  }).catch(function (e) {
+    UI.$('#rows').innerHTML = UI.emptyRow(10, '加载失败', e.message);
+  });
+}
+
+function render(data) {
+  var rows = data.records || [];
+  if (!rows.length) {
+    UI.$('#rows').innerHTML = UI.emptyRow(10, '没有符合条件的工单', '换个关键词，或点上面的统计卡片看别的状态');
+  } else {
+    UI.$('#rows').innerHTML = rows.map(function (t) {
+      var src = t.source === 'AI'
+        ? '<span class="badge ai">AI</span>'
+          + (t.aiConfidence !== null && t.aiConfidence !== undefined
+              ? ' <span class="muted" style="font-size:12px">'
+                + Math.round(t.aiConfidence * 100) + '%</span>' : '')
+        : '<span class="badge line">用户自助</span>';
+      return '<tr class="clickable" data-no="' + UI.esc(t.ticketNo) + '">'
+        + '<td class="mono">' + UI.esc(t.ticketNo) + '</td>'
+        + '<td class="mono">' + UI.esc(t.orderNo) + '</td>'
+        + '<td>' + UI.esc(t.productName || '-') + '</td>'
+        + '<td>' + UI.esc(TYPE_TEXT[t.type] || t.type) + '</td>'
+        + '<td style="max-width:260px">' + UI.esc(t.reason || '') + '</td>'
+        + '<td>' + UI.ticketBadge(t.status) + '</td>'
+        + '<td class="nowrap">' + src + '</td>'
+        + '<td>' + (t.handlerName ? UI.esc(t.handlerName) : '<span class="muted">未分配</span>') + '</td>'
+        + '<td class="nowrap">' + UI.dt(t.createTime, true) + '</td>'
+        + '<td class="acts"><button class="btn sm" data-detail="' + UI.esc(t.ticketNo) + '">处理</button></td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  UI.pager(UI.$('#pager'), {
+    total: data.total, page: state.page, limit: state.limit,
+    onChange: function (p) { state.page = p; load(); }
+  });
+
+  UI.$$('#rows tr.clickable').forEach(function (tr) {
+    tr.onclick = function (e) {
+      var no = e.target.getAttribute && e.target.getAttribute('data-detail');
+      openDetail(no || tr.getAttribute('data-no'));
+    };
+  });
+}
+
+var TYPE_TEXT = { REFUND: '退货退款', EXCHANGE: '换货', REPAIR: '维修' };
+
+/* ---------------- 顶部统计（点击即筛选） ---------------- */
+function renderKpis() {
+  var s = lastStats;
+  var cards = [
+    { label: '待审核',  value: s.PENDING || 0,       status: 'PENDING',       cls: 'warn' },
+    { label: '待人工',  value: s.MANUAL_REVIEW || 0, status: 'MANUAL_REVIEW', cls: 'danger' },
+    { label: '处理中',  value: (s.APPROVED || 0) + (s.REFUNDING || 0), status: 'APPROVED', cls: 'info' },
+    { label: '已完成',  value: s.COMPLETED || 0,     status: 'COMPLETED',     cls: 'ok' }
+  ];
+  UI.$('#kpis').innerHTML = cards.map(function (c) {
+    /* 「处理中」其实是两个状态的合计，点了按 APPROVED 筛，这里用 title 说明 */
+    return '<div class="kpi ' + (state.status === c.status ? 'on' : '') + '" data-st="' + c.status + '"'
+      + (c.label === '处理中' ? ' title="已通过 + 退款中"' : '') + '>'
+      + '<div class="k"><span class="badge ' + c.cls + '">' + c.label + '</span></div>'
+      + '<div class="v">' + c.value + '<small> 单</small></div></div>';
+  }).join('');
+  UI.$$('#kpis .kpi').forEach(function (el) {
+    el.onclick = function () {
+      var st = el.getAttribute('data-st');
+      state.status = (state.status === st) ? '' : st;
+      state.page = 1;
+      UI.$('#status').value = state.status;
+      load();
+    };
+  });
+}
+
+/* ---------------- 详情 + 状态流转 ---------------- */
+function openDetail(ticketNo) {
+  UI.openDrawer({ title: '工单详情', body: '<div class="loading"><div class="spinner"></div>加载中…</div>' });
+  Api.get('/api/after-sales/' + encodeURIComponent(ticketNo)).then(function (t) {
+    paint(t);
+  }).catch(function (e) {
+    UI.openDrawer({ title: '工单详情', body: '<div class="empty"><div class="big">加载失败</div><div>' + UI.esc(e.message) + '</div></div>' });
+  });
+}
+
+function paint(t) {
+  UI.openDrawer({
+    title: '工单 ' + UI.esc(t.ticketNo) + '　' + UI.ticketBadge(t.status),
+    body: detailHtml(t),
+    footer: footerHtml(t),
+    onClose: function () {}
+  });
+  bindFooter(t);
+}
+
+function detailHtml(t) {
+  var ord = t.order;
+  var orderBlock = ord
+    ? '<div class="card"><div class="card-hd"><h3>关联订单</h3>'
+      + '<div class="right"><span class="badge line">' + UI.esc(ord.statusText) + '</span></div></div>'
+      + '<div class="card-bd"><div class="dl">'
+      + '<dt>订单号</dt><dd class="mono">' + UI.esc(ord.orderNo) + '</dd>'
+      + '<dt>下单用户</dt><dd>' + UI.esc(ord.userNickname || '-') + ' <span class="muted">(ID ' + ord.userId + ')</span></dd>'
+      + '<dt>签收时间</dt><dd>' + UI.dt(ord.receiveTime) + '</dd>'
+      + '<dt>实付金额</dt><dd>' + UI.money(ord.payAmount) + '</dd>'
+      + '</div>'
+      + '<div class="table-wrap mt12"><table class="tb"><thead><tr>'
+      + '<th>商品</th><th class="num">单价</th><th class="num">数量</th>'
+      + '<th>退货截止</th><th>资格</th></tr></thead><tbody>'
+      + (ord.items || []).map(function (it) {
+          return '<tr><td>' + UI.esc(it.productName) + '</td>'
+            + '<td class="num">' + UI.money(it.price) + '</td>'
+            + '<td class="num">×' + it.quantity + '</td>'
+            + '<td class="nowrap">' + UI.dt(it.refundDeadline, true) + '</td>'
+            + '<td>' + UI.eligBadge(it) + '</td></tr>';
+        }).join('')
+      + '</tbody></table></div></div></div>'
+    : '';
+
+  return ''
+    /* 工单基本信息 + AI 置信度 */
+    + '<div class="card"><div class="card-hd"><h3>工单信息</h3>'
+    + '<div class="right">'
+    + (t.source === 'AI' ? '<span class="badge ai">AI 创建</span>' : '<span class="badge line">用户自助</span>')
+    + '</div></div><div class="card-bd"><div class="dl">'
+    + '<dt>工单号</dt><dd class="mono">' + UI.esc(t.ticketNo) + '</dd>'
+    + '<dt>订单号</dt><dd class="mono">' + UI.esc(t.orderNo) + '</dd>'
+    + '<dt>申请商品</dt><dd>' + UI.esc(t.productName || '-') + '</dd>'
+    + '<dt>工单类型</dt><dd>' + UI.esc(TYPE_TEXT[t.type] || t.type) + '</dd>'
+    + '<dt>申请原因</dt><dd>' + UI.esc(t.reason || '-') + '</dd>'
+    + '<dt>当前状态</dt><dd>' + UI.ticketBadge(t.status) + '</dd>'
+    + '<dt>处理人</dt><dd>' + (t.handlerName ? UI.esc(t.handlerName) : '<span class="muted">未分配</span>') + '</dd>'
+    + '<dt>处理备注</dt><dd>' + (t.handleRemark ? UI.esc(t.handleRemark) : '<span class="muted">-</span>') + '</dd>'
+    + '<dt>创建时间</dt><dd>' + UI.dt(t.createTime) + '</dd>'
+    + '<dt>更新时间</dt><dd>' + UI.dt(t.updateTime) + '</dd>'
+    + '</div>'
+    + (t.aiGenerated ? '<div class="mt12"><div class="muted" style="font-size:12px;margin-bottom:6px">'
+        + 'AI 置信度（低于 70% 的工单会直接进「待人工」，不自动推进）</div>'
+        + UI.confBar(t.aiConfidence) + '</div>' : '')
+    + '</div></div>'
+
+    + orderBlock
+
+    /* 流转记录时间线：每一条都对应 t_after_sale_flow 的一行 */
+    + '<div class="card"><div class="card-hd"><h3>流转记录</h3>'
+    + '<div class="right muted" style="font-size:12px">表 t_after_sale_flow</div></div>'
+    + '<div class="card-bd"><div class="timeline">'
+    + (t.flows || []).map(function (f) {
+        var cls = f.operatorType === 'AI' ? 'ai'
+          : (f.toStatus === 'REJECTED' || f.toStatus === 'CANCELLED') ? 'bad'
+          : (f.toStatus === 'COMPLETED' ? 'ok' : 'sys');
+        var fromText = f.fromStatus ? UI.ticketBadge(f.fromStatus) + ' <span class="muted">→</span> ' : '';
+        return '<div class="tl-item ' + cls + '">'
+          + '<div class="hd">' + fromText + UI.ticketBadge(f.toStatus)
+          + '<span class="badge line">' + UI.esc(f.operatorType) + '</span>'
+          + '<span class="muted">' + UI.esc(f.operatorName || '') + '</span>'
+          + '<span class="t">' + UI.dt(f.createTime, true) + '</span></div>'
+          + (f.remark ? '<div class="rm">' + UI.esc(f.remark) + '</div>' : '')
+          + '</div>';
+      }).join('')
+    + '</div></div></div>';
+}
+
+/** 底部按钮区：**完全由状态机决定显示哪几个按钮**。
+ *  这也是前端和后端共享同一套规则的地方——后端还会再校验一次。 */
+function footerHtml(t) {
+  var allowed = SM.allowed(t.status);
+  if (!allowed.length) {
+    return '<span class="muted">该工单已是终态（' + UI.esc(SM.TICKET_STATUS_TEXT[t.status]) + '），不能再流转</span>'
+      + '<span style="flex:1"></span><button class="btn" data-act="close">关闭</button>';
+  }
+  return '<span class="muted" style="font-size:12px">可流转到：'
+    + allowed.map(function (s) { return SM.TICKET_STATUS_TEXT[s]; }).join('、')
+    + '</span><span style="flex:1"></span>'
+    + allowed.map(function (s) {
+        var ui = SM.TRANSITION_UI[s] || { text: s, cls: '' };
+        return '<button class="btn ' + ui.cls + '" data-to="' + s + '">' + ui.text + '</button>';
+      }).join('')
+    + '<button class="btn" data-act="close">关闭</button>';
+}
+
+function bindFooter(t) {
+  UI.$$('#dwFoot [data-act="close"]').forEach(function (b) {
+    b.onclick = function () { UI.closeDrawer(); };
+  });
+  UI.$$('#dwFoot [data-to]').forEach(function (b) {
+    b.onclick = function () { askRemark(t, b.getAttribute('data-to')); };
+  });
+}
+
+/** 点流转按钮后，先把底部换成"填备注"的输入框，确认了才发请求。
+ *  真实工单系统都必须留备注，这里强制走一遍这个流程。 */
+function askRemark(t, toStatus) {
+  var ui = SM.TRANSITION_UI[toStatus] || { text: toStatus };
+  UI.$('#dwFoot').innerHTML =
+    '<div style="width:100%">'
+    + '<div class="muted" style="font-size:12px;margin-bottom:6px">'
+    + '即将把工单从「' + UI.esc(SM.TICKET_STATUS_TEXT[t.status]) + '」流转为「'
+    + UI.esc(SM.TICKET_STATUS_TEXT[toStatus]) + '」，请填写处理备注</div>'
+    + '<textarea class="textarea" id="rmk" rows="2" style="width:100%" '
+    + 'placeholder="例如：照片已核实，确属质量问题，同意退货"></textarea>'
+    + '<div class="row mt8"><span style="flex:1"></span>'
+    + '<button class="btn" id="rmkCancel">取消</button>'
+    + '<button class="btn primary" id="rmkOk">确认' + UI.esc(ui.text || '') + '</button>'
+    + '</div></div>';
+
+  UI.$('#rmkCancel').onclick = function () { paint(t); };
+  UI.$('#rmkOk').onclick = function () {
+    var remark = UI.$('#rmk').value.trim();
+    var btn = UI.$('#rmkOk');
+    btn.disabled = true; btn.textContent = '提交中…';
+
+    Api.post('/api/after-sales/' + encodeURIComponent(t.ticketNo) + '/transition', {
+      toStatus: toStatus,
+      remark: remark,
+      operatorType: me.role === 'ADMIN' ? 'ADMIN' : 'AGENT',
+      operatorName: me.nickname || ''
+    }).then(function (res) {
+      UI.toast('已流转为「' + (res.statusText || toStatus) + '」', 'ok');
+      load();
+      openDetail(t.ticketNo);   /* 重新打开，看到最新的流转记录 */
+    }).catch(function (e) {
+      UI.toast(e.message || '流转失败', 'err');
+      btn.disabled = false; btn.textContent = '确认';
+    });
+  };
+}
+
+/* ---------------- 事件 ---------------- */
+UI.$('#btnSearch').onclick = function () {
+  state.keyword = UI.$('#kw').value.trim();
+  state.status = UI.$('#status').value;
+  state.source = UI.$('#source').value;
+  state.limit = parseInt(UI.$('#limit').value, 10);
+  state.page = 1;
+  load();
+};
+UI.$('#btnReset').onclick = function () {
+  UI.$('#kw').value = ''; UI.$('#status').value = ''; UI.$('#source').value = '';
+  UI.$('#limit').value = '10';
+  state = { page: 1, limit: 10, keyword: '', status: '', source: '' };
+  load();
+};
+UI.$('#kw').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') UI.$('#btnSearch').click();
+});
+UI.$('#limit').onchange = function () {
+  state.limit = parseInt(this.value, 10); state.page = 1; load();
+};
+
+UI.$('#hint').innerHTML = UI.apiHint([
+  'GET /api/after-sales', 'GET /api/after-sales/{ticketNo}', 'POST /api/after-sales/{ticketNo}/transition'
+]);
+
+load();
+</script>
+</body>
+</html>
