@@ -25,7 +25,7 @@ public class User implements Serializable {
     //角色
     private String role;
     //状态
-    private Byte status;
+    private Integer status;
     //创建时间
     private LocalDateTime createTime;
     //更新时间

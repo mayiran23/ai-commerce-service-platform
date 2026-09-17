@@ -67,6 +67,37 @@
             <artifactId>pagehelper-spring-boot-starter</artifactId>
             <version>4.1.1</version>
         </dependency>
+
+        <!-- ==================== JWT 三件套（缺一个运行时就炸）==================== -->
+        <!-- ① 接口：你代码里 import 的 Jwts / Claims / Key 都来自它 -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.5</version>
+        </dependency>
+        <!-- ② 实现：运行时才需要（编译期用不到，所以是 runtime） -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.5</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- ③ JSON 序列化：token 的 payload 靠它转 JSON，同样是 runtime -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.5</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ==================== BCrypt 密码比对 ====================
+             只引 crypto 这一个模块，不写 <version>（Spring Boot 4.0.8 通过
+             spring-security-bom 7.0.7 管理它）。
+             千万别引 spring-boot-starter-security —— 会把现有接口全变成 401。 -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

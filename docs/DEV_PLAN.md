@@ -15,13 +15,21 @@
 | 接口文档 `docs/API.md`（13 外部 + 5 内部接口） | ✅ 完成 |
 | nginx（http://localhost:8081） | ✅ 完成，页面能打开 |
 | Java 骨架（entity / mapper / service / controller / result） | ✅ 目录和类都建了 |
-| **Java 业务方法体** | ❌ **全是空的 —— 这就是断点** |
+| 订单列表接口（分页 + 三条件筛选） | ✅ **9/15 完成，全部实测通过** |
+| 前端联调（`USE_MOCK=false`，真库数据上页） | ✅ **9/15 完成**（原计划 9/20） |
+| 登录 / JWT | 🟡 **只建了 3 个类** —— `LoginDTO` / `UserVO` / `LoginVO` 已写好；pom 依赖、`UserMapper`、`JwtUtil`、拦截器**都还没动**（9/17 正式开工） |
+| 订单详情 / 统计接口、`items` 明细 | ❌ 未写（已排到 9/20–9/21） |
 | Python AI 服务 | ❌ 没开始 |
-| git 提交（docs / frontend / scripts / 5 个包） | ❌ **还没提交，今天第一件事** |
+| git 提交（docs / frontend / scripts / 5 个包） | ✅ **已提交推送** |
+
+> **9/15 实际进度 = 计划里 9/15 + 9/16 两天全部 + 9/20 的联调切换，提前约 5 天。**
+> 实测证据见下方第三节。
 
 **一句话定位**：你站在 `docs/API.md` 第 11 节那 16 步的**起跑线上**。骨架、数据、前端、文档都齐了，缺的只是"把方法填上"。
 
-### 今天开工前，先花 5 分钟做这件事
+### ~~今天开工前，先花 5 分钟做这件事~~ ✅ 9/15 已提交推送
+
+> 此条已完成，不用再做，留着只为记录当时的判断。
 
 ```bash
 cd D:\mayiran-work\projects\ai-commerce-service-platform
@@ -31,6 +39,63 @@ git push
 ```
 
 **为什么必须先做**：`docs/`、`frontend/`、`scripts/gen_mock.py` 和那 5 个 Java 包现在全是 untracked 状态（`git status` 里带 `??`）。这些东西一旦误删就是白干一整天。
+
+---
+
+## ★ 9/17 – 9/24 清单（中秋前收口 · 9/16 晚制定）
+
+> 8 个工作日（9/17 四 – 9/24 四），**每天 2 小时**。9/25–9/27 是中秋，所以这条线的收口点定在 **9/24**。
+> 用法：每天只做当天那一行，做完对照「通关证据」打勾，**没打勾不要往下走**。
+
+### 起点状态（9/16 晚实测）
+
+| 已完成 | 说明 |
+|---|---|
+| 订单列表接口 | 分页 + `status` / `userId` / `keyword` 三条件，实测全过 |
+| 前端切真后端 | `USE_MOCK=false`，`orders.html` 出真库数据 |
+| 登录骨架 | `LoginDTO` / `UserVO` / `LoginVO` 三个类已写好，`AuthController` 是空壳 |
+
+| 还没动 | 说明 |
+|---|---|
+| pom 的 `jjwt` / `spring-security-crypto` | **一个都没加** —— 这是 9/17 的第一步 |
+| `UserMapper` + `UserMapper.xml` | 没有（登录查用户要用它） |
+| `JwtUtil` / 拦截器 / `UserContext` / `enums` 包 | 都没有 |
+| 订单详情 / 统计 / `items` 明细 | 没写 |
+| 工单 / Chat / Python AI 服务 | 完全没开始 |
+
+**结论：进度回到原计划，不算落后。** 原计划排的就是 9/17 做登录 ——
+9/15 挣来的那 1 天提前量用掉了，现在正好站在排期线上。
+
+### 逐日清单
+
+| 日期 | 做什么 | 通关证据（缺一不可） |
+|---|---|---|
+| **9/17 四** | 登录接口：pom 加 4 个依赖 → 配 `jwt.secret`（≥32 字符）→ `UserMapper.findByUsername` + XML（查 7 列，**不写 `*`**）→ `AuthService` → 填 `AuthController` | `curl` 正确密码返回 `token` + `user`；**错密码和"用户不存在"两个响应的 JSON 逐字符一致**（防用户名枚举） |
+| **9/18 五** | `JwtUtil`（生成 / 解析）→ `LoginInterceptor` + `WebMvcConfig`（放行 `/api/auth/login`）→ `UserContext`（ThreadLocal，**`afterCompletion` 里 `remove()`**）→ `GET /api/auth/me` | 不带 token 访问 `/api/orders` → **401** |
+| **9/19 六** | 订单接口的 `userId` 改成**从 token 里解析**，USER 角色强制覆盖前端传的值；完成后**删掉 `frontend/dev-login.html`** | USER 的 token 硬塞 `?userId=118` → **仍只返回自己那 3 单** ← 越权自测 |
+| **9/20 日** | `GET /api/orders/{orderNo}`：订单 + 明细 + 物流；`refundEligible` **由 Java 逐件算** | 拿库里那 88 条「卡在 7 天整」的边界数据自测，三档判定全对 |
+| **9/21 一** | 订单列表补 `items` / `logistics`（`logistics` 改**单个对象**，没物流给 `null` —— 空数组 `[]` 在 JS 里是 truthy，会渲染出一个空物流壳子）；`GET /api/stats/orders` | orders.html 的 4 张 KPI 卡片和明细列全是真数据 ← **里程碑：订单模块闭环** |
+| **9/22 二** | 工单实体 + Mapper（`t_after_sale`）+ `GET /api/after-sales` + 工单状态统计 | 列表能出（表是空的，返回 `total=0` 也算通过） |
+| **9/23 三** | `GET /api/after-sales/{ticketNo}` 详情 + 流转记录 + `allowedTransitions` | `flows` 返回的是**数组**，不是拼好的字符串 |
+| **9/24 四** | `POST /api/after-sales/{ticketNo}/transition` + **状态机校验**（照 `API.md` 6.5 那张流转表） | 对已完成的工单再流转 → **被拦住并返回明确原因**，不是 500 ← **9/24 收口点** |
+
+> 9/25 那步（`POST /api/after-sales` 用户自助建单 + 幂等）落在中秋假期里，按下面的"中秋缓冲"处理。
+
+### 三个卡点，提前知道
+
+1. **9/17 的 jjwt 是这 8 天里最容易卡住的一步。** 0.12.x 的 API 跟网上大量 0.9.x 老教程
+   **不兼容**（`Jwts.parser().verifyWith(key).build()`，不是 `setSigningKey`）；三个 jar 缺一个
+   编译能过，但会在**运行时**报 `ClassNotFoundException`。**卡住 40 分钟就先停**，隔天再回来。
+2. **9/18 忘写 `UserContext.remove()` 是真实线上事故类型**：Tomcat 用线程池，不清的话下一个请求
+   会在同一线程上拿到上一个用户的身份。自测法：连续打两个不同用户的请求，看第二个有没有串号。
+3. **9/24 的状态机校验要"返回原因"，不要抛异常。** 前端 `tickets.html` 靠这个原因给用户提示；
+   抛 500 会让页面崩在"加载失败"上，等于功能没做。
+
+### 中秋缓冲怎么用（9/25 – 9/27）
+
+9/23–9/24 正好卡在中秋前。**如果 9/24 没到「工单能流转」，不要把中秋当工期硬扛** ——
+把 9/25 的自助建单顺延到 9/28，中秋照常休。理由：阶段二的真正里程碑是「点审核通过、
+数据库状态真的变了」，往后挪一天仍落在 **9/30「AI 能查到真订单」** 这条死线前面，安全。
 
 ---
 
@@ -55,13 +120,56 @@ git push
 
 | 日期 | 做什么 | 通关证据 |
 |---|---|---|
-| **9/15 二（今天）** | `OrderMapper` 加一个方法（用 `@Select` 注解，不写 XML）→ `OrderService` 包一层 → `OrderController.listOrders` 填上方法体，返回 `Result<PageResult>` | 浏览器打开 `http://localhost:8080/api/orders?limit=5`，**看到 5 条 JSON**，`orderNo` / `totalAmount` 有值不是 null ← **第一个里程碑** |
-| **9/16 三** | 照 `API.md` 5.1 的参数表补齐分页和筛选：`page` / `limit` / `keyword` / `status` / `userId`，外加一个 count 查询 | `?status=RECEIVED` 返回 325 条；`?page=2&limit=20` 第二页数据不重复 |
+| ~~**9/15 二**~~ ✅ | ~~`OrderMapper` 加一个方法 → `OrderService` 包一层 → `OrderController.listOrders` 填上方法体，返回 `Result<PageResult>`~~ | **已通过**：`?limit=5` 出 5 条 JSON，`orderNo` / `totalAmount` 有值 |
+| ~~**9/16 三**~~ ✅ | ~~照 `API.md` 5.1 的参数表补齐分页和筛选：`page` / `limit` / `keyword` / `status` / `userId`~~ | **已通过**，实测见下 |
 | **9/17 四** | 登录接口 `POST /api/auth/login` + `JwtUtil` 工具类 + 拦截器 + 注册放行名单（pom 要加 jjwt 依赖，用 0.12.x） | `curl` 登录拿到 token；**不带 token 访问 `/api/orders` 返回 401** |
 | **9/18 五** | `GET /api/auth/me`；把订单接口的 userId 改成从 token 里解析 | 用 `user0001` 的 token 只能查到自己那几单，看不到别人的 ← 这就是**越权自测** |
 | **9/19 六** | `GET /api/orders/{orderNo}`：订单 + 明细 + 物流 + **`refundEligible` 由 Java 算** | 拿那 88 条"卡在 7 天整"的边界数据自测，判定全部正确 |
 | **9/20 日** | `GET /api/stats/orders`；然后打开 `frontend/assets/api.js`，把 `USE_MOCK` 改成 `false` | orders.html 上的 KPI 和列表全是数据库真数据，右上角不再显示「Mock 数据」← **里程碑：订单模块闭环** |
 | **9/21 一** | 缓冲日 —— 补前面几天没做完的、或踩到的坑 | 周末没能演示的东西，今天补上 |
+
+**9/15 实测记录**（用 curl 打你自己的接口，不是页面"看起来对"）：
+
+| 请求 | 期望 | 实测 |
+|---|---|---|
+| `?userId=1` | 只有谢雨欣的单 | `total=3`，返回 userId 全是 `1` ✅ |
+| `?status=RECEIVED` | **325 条** | `total=325` ✅ —— 与计划预期一字不差 |
+| `?keyword=SO2026091300069` | 命中 1 条 | `total=1` ✅ |
+| `?keyword=谢雨欣` | 按昵称命中 3 条 | `total=3`，全是谢雨欣 ✅ |
+| `?keyword=zzzzzz` | 0 条 | `total=0` ✅ |
+
+**`keyword` 还做了超出计划的事**：一条 `<if>` 里同时匹配订单号 / 用户昵称 / 商品名
+（商品名走 `EXISTS` 子查询），也就是前端搜索框写"订单号 / 用户昵称 / 商品名"真的三种都能搜。
+
+### 9/16 三 · 今日任务（登录 + JWT，比原计划提前一天）
+
+**为什么先做登录、而不是先做订单详情/统计**：`API.md` 5.2 要求详情接口做越权检查、
+5.3 要求"非 AGENT/ADMIN 加 `WHERE user_id = ?`" —— 这两个接口的过滤依据就是登录用户 id。
+先写它们，等 JWT 做完必须返工；先做登录则一次写对。
+
+**上午 · 登录三件套（不碰拦截器）**
+
+| # | 做什么 | 通关证据 |
+|---|---|---|
+| 1 | pom 加 4 个依赖：`jjwt-api` / `jjwt-impl` / `jjwt-jackson` 0.12.6 + `spring-security-crypto` | 编译过 |
+| 2 | `application.properties` 加 `jwt.secret`（≥32 字符）+ `jwt.expire-hours=24` | 文件已 gitignore，安全 |
+| 3 | `UserMapper.findByUsername` + XML（查 7 列，**不查 `*`**） | 能按 `user0001` 查出一行 |
+| 4 | `LoginDTO` / `UserVO` / `LoginVO` + `AuthService` + `AuthController` | `data` 里同时有 `token` 和 `user` |
+| 5 | curl 测（密码统一 `123456`） | 对密码出 token；错密码 `{"code":0,"msg":"用户名或密码错误"}` |
+
+**下午 · JWT 拦截器（今天的硬骨头）**
+
+| # | 做什么 | 通关证据 |
+|---|---|---|
+| 6 | `JwtUtil`：生成 / 解析 | token 能解出 userId + role |
+| 7 | `LoginInterceptor` + `WebMvcConfig`，放行 `/api/auth/login` | — |
+| 8 | `UserContext`（ThreadLocal）+ `afterCompletion` 里 **remove** | 不 remove 会在下个请求串号（面试考点） |
+| 9 | `OrderServiceImpl` 覆盖 userId：USER 角色强制用 token 里的 id | — |
+| 10 | **越权自测** | 不带 token 访问 `/api/orders` → 401；USER 的 token 硬塞 `?userId=118` → 仍只返回自己的 3 单 |
+
+**收尾**：拦截器生效后删掉 `frontend/dev-login.html`（免登录后门，答辩减分项）。
+
+**如果还有时间**（不必硬赶，原计划是 9/19–9/20）：列表补 `items` / `logistics`、`GET /api/stats/orders`、`GET /api/orders/{orderNo}`。
 
 ---
 
