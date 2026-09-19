@@ -42,9 +42,6 @@ public class OrderVO implements Serializable {
     //收货人地址
     private String receiverAddr;
     //用户关联的商品信息
-    //⚠️ 必须加 @Builder.Default：否则 @Builder 会无视 = new ArrayList<>() 这行初始化，
-    //   用 builder 构建时 items 会是 null，前端 o.items.length 会直接报错
-    @Builder.Default
     private List<OrderItemVO> items =new ArrayList<>();
     //用户关联的物流轨迹表
     private OrderLogisticsVO logistics;

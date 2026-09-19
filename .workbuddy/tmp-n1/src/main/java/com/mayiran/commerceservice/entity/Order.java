@@ -1,22 +1,18 @@
-package com.mayiran.commerceservice.vo;
+package com.mayiran.commerceservice.entity;
 
-import com.mayiran.commerceservice.entity.OrderLogistics;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class OrderVO implements Serializable {
+public class Order {
 
     private Long id;
     //订单号
@@ -41,16 +37,10 @@ public class OrderVO implements Serializable {
     private String receiverPhone;
     //收货人地址
     private String receiverAddr;
-    //用户关联的商品信息
-    //⚠️ 必须加 @Builder.Default：否则 @Builder 会无视 = new ArrayList<>() 这行初始化，
-    //   用 builder 构建时 items 会是 null，前端 o.items.length 会直接报错
-    @Builder.Default
-    private List<OrderItemVO> items =new ArrayList<>();
-    //用户关联的物流轨迹表
-    private OrderLogisticsVO logistics;
-    //姓名
-    private String userNickname;
     //创建时间
     private LocalDateTime createTime;
+    //更新时间
+    private LocalDateTime updateTime;
+
 
 }
