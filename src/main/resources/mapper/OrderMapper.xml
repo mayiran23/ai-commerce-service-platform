@@ -28,5 +28,24 @@
         ORDER BY o.create_time DESC
 
     </select>
+    <select id="getByOrderNo" resultType="com.mayiran.commerceservice.vo.OrderVO">
+        SELECT o.id,o.order_no, o.user_id, u.nickname AS userNickname, o.status,
+               o.total_amount, o.pay_amount, o.pay_time, o.ship_time, o.receive_time,
+               o.receiver_name, o.receiver_phone, o.receiver_addr, o.create_time
+        FROM t_order o
+                 LEFT JOIN t_user u ON u.id = o.user_id
+        WHERE o.order_no = #{orderNo}
+    </select>
+    <select id="getItems" resultType="com.mayiran.commerceservice.entity.OrderItem">
+        SELECT id, order_id, order_no, product_id, product_name, product_price, quantity, refund_deadline
+        FROM t_order_item
+        WHERE order_no = #{orderNo}
+        ORDER BY id
+    </select>
+    <select id="getLogistics" resultType="com.mayiran.commerceservice.entity.OrderLogistics">
+        SELECT id, order_no, track_no, current_status, current_node, estimated_arrival, update_time
+        FROM t_order_logistics
+        WHERE order_no = #{orderNo}
+    </select>
 
 </mapper>

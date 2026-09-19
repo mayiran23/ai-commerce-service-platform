@@ -6,12 +6,10 @@ import com.mayiran.commerceservice.result.PageResult;
 import com.mayiran.commerceservice.result.Result;
 import com.mayiran.commerceservice.service.OrderService;
 import com.mayiran.commerceservice.service.impl.OrderServiceImpl;
+import com.mayiran.commerceservice.vo.OrderVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -28,5 +26,13 @@ public class OrderController {
         log.info("商品的分页查询:{}",orderPageDTO);
         PageResult page= orderService.pageOrders(orderPageDTO);
         return Result.success(page);
+    }
+
+    //根据订单号查询详细信息
+    @GetMapping("{orderNo}")
+    public Result<OrderVO> getOrderDetail(@PathVariable String orderNo){
+        log.info("根据订单号查询订单的详细信息:{}",orderNo);
+        OrderVO orderVO = orderService.getOrdersByorderNo(orderNo);
+        return Result.success(orderVO);
     }
 }

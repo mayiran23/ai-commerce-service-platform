@@ -43,9 +43,9 @@ public class OrderVO implements Serializable {
     //收货人地址
     private String receiverAddr;
     //用户关联的商品信息
-    private List<OrderItem> items =new ArrayList<>();
+    private List<OrderItemVO> items =new ArrayList<>();
     //用户关联的物流轨迹表
-    private List<OrderLogistics> logistics=new ArrayList<>();
+    private OrderLogisticsVO logistics;
     //姓名
     private String userNickname;
     //创建时间
