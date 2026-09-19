@@ -758,24 +758,22 @@ var USE_MOCK = false;   // ← 从 true 改成 false
 
 ### 9.3 登录这一步现在怎么过
 
-`login.html` 走的是 `POST /api/auth/login`，**这个接口还没写**（JWT 排在 9/17）。
-但前端的 `UI.requireLogin()` 只检查 localStorage 里有没有 `cs_token`，
-后端目前也没有拦截器去校验它 —— 所以可以直接把登录态写进去：
+`login.html` 走的是 `POST /api/auth/login`，**接口已完成**（9/17 落地，9/18 前后端联调通过）。
+用真实账号密码登录即可，token 由后端签发，24 小时有效：
 
-**方式一（推荐）**：打开 `http://localhost:8081/dev-login.html`，点一个身份进去。
-- 客服 `郭思远`（id=108）/ 管理员 `何皓宇`（id=92）→ 能看全部订单
-- 普通用户 `谢雨欣`（id=1）→ 只带自己的 `userId`
+| 账号 | 密码 | 角色 | 能看什么 |
+|---|---|---|---|
+| `user0001` | 见数据库（BCrypt 存库，不可反推） | 普通用户 | 只看自己的订单 |
+| `user0092` | 同上 | 管理员 | 全部订单 |
+| `user0108` | 同上 | 客服 | 全部订单 |
 
-**方式二**：F12 → Console 粘一行
+登录成功后 `localStorage` 里会写入 `cs_token`（JWT）和 `cs_user`（用户信息）。
+之后每个请求由 `api.js` 自动带上 `Authorization: Bearer <token>`，
+后端 `LoginInterceptor` 校验通过才会放行；校验失败统一返回 **HTTP 401**，
+前端收到 401 自动清除登录态并跳回登录页。
 
-```js
-localStorage.setItem('cs_token','dev');
-localStorage.setItem('cs_user',JSON.stringify({id:108,username:'user0108',nickname:'郭思远',role:'AGENT',roleText:'客服'}));
-location.href='orders.html';
-```
-
-> ⚠️ `dev-login.html` 是**开发脚手架**。等 9/17 登录接口和拦截器写完就删掉它，
-> 别让它跟着项目上生产。
+> 之前那个 `frontend/dev-login.html` 免登录后门**已删除**（9/19）。
+> 后端拦截器已生效，伪造的 token 会被直接拒绝，留着也没用了。
 
 ### 9.4 现在联调能看到什么 / 还看不到什么
 
@@ -840,7 +838,7 @@ from t_order o , t_user u where u.id = o.user_id
 
 ### 9.7 普通用户看到了全部订单 —— 两个层面的问题（2026-09-15 晚）
 
-**现象**：用 `dev-login.html` 以「普通用户 谢雨欣（id=1）」进入订单页，
+**现象**：以「普通用户 谢雨欣（id=1）」进入订单页，
 页头写着"用户视角：只能看到自己的订单"，但表格里 500 单全在。
 
 #### 层面一：直接原因 —— XML 里没有 WHERE，参数被丢掉了
@@ -849,7 +847,7 @@ from t_order o , t_user u where u.id = o.user_id
 
 | 环节 | 实际发生了什么 |
 |---|---|
-| ① `dev-login` 写入 `cs_user` | `{id:1, role:'USER', ...}` —— `id` 是有的 |
+| ① 登录接口写入 `cs_user` | `{id:1, role:'USER', ...}` —— `id` 是有的 |
 | ② `orders.html` | `isAgent=false` → `state.userId = me.id = 1` |
 | ③ `api.js` 拼 query | `userId=1` 非空，**会拼上** |
 | ④ `OrderController` | 参数绑定成功：`OrderPageDTO(page=1, limit=10, userId=1)` |

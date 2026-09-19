@@ -116,20 +116,23 @@ var API_BASE = '';                        // 走 nginx 同源（推荐）
 var API_BASE = 'http://localhost:8080';   // 直连后端（后端要开 CORS）
 ```
 
-### 联调时登录怎么办：`dev-login.html`
+### 登录走真实接口
 
-`login.html` 走 `POST /api/auth/login`，这个接口**还没写**（排在 9/17）。
-但 `UI.requireLogin()` 只检查 localStorage 里有没有 `cs_token`，
-后端也没有拦截器去校验 —— 所以直接打开
+打开 `http://localhost:8081/login.html`，用数据库里的真实账号密码登录。
+后端 `POST /api/auth/login` 会校验密码并签发 JWT，前端把 token 存进
+`localStorage` 的 `cs_token`，之后每个请求由 `api.js` 自动带上
+`Authorization: Bearer <token>` 头。
 
-```
-http://localhost:8081/dev-login.html
-```
+三个可用身份（数据库 `t_user` 表）：
 
-点一个身份（客服 / 管理员 / 普通用户）即可进入，不需要密码。
+| 账号 | 角色 | 能看什么 |
+|---|---|---|
+| `user0001` | 普通用户 | 只看自己的订单 |
+| `user0092` | 管理员 | 全部订单 |
+| `user0108` | 客服 | 全部订单 |
 
-> ⚠️ 这是**开发脚手架**。等 9/17 登录接口 + JWT 拦截器写完就删掉，别带上生产。
-> 用 `location.href='login.html'` 旁边那个「清除登录态」按钮可以退出。
+> 登录态存在 `localStorage`，token 有效期 24 小时。401 时 `api.js` 会自动
+> 清除登录态并跳回登录页。
 
 完整的联调步骤、能/不能看到什么、排查顺序，见
 `docs/ORDER_API_HANDOUT.md` 第 9 节。

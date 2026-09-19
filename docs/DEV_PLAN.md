@@ -167,7 +167,8 @@ git push
 | 9 | `OrderServiceImpl` 覆盖 userId：USER 角色强制用 token 里的 id | — |
 | 10 | **越权自测** | 不带 token 访问 `/api/orders` → 401；USER 的 token 硬塞 `?userId=118` → 仍只返回自己的 3 单 |
 
-**收尾**：拦截器生效后删掉 `frontend/dev-login.html`（免登录后门，答辩减分项）。
+**收尾**：~~拦截器生效后删掉 `frontend/dev-login.html`（免登录后门，答辩减分项）。~~
+→ **已完成（2026-09-19）**：`frontend/dev-login.html` 已删除，两处文档引用同步更新。
 
 **如果还有时间**（不必硬赶，原计划是 9/19–9/20）：列表补 `items` / `logistics`、`GET /api/stats/orders`、`GET /api/orders/{orderNo}`。
 
