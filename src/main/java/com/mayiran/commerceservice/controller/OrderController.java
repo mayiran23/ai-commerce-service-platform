@@ -29,7 +29,7 @@ public class OrderController {
     }
 
     //根据订单号查询详细信息
-    @GetMapping("{orderNo}")
+    @GetMapping("/{orderNo}")
     public Result<OrderVO> getOrderDetail(@PathVariable String orderNo){
         log.info("根据订单号查询订单的详细信息:{}",orderNo);
         OrderVO orderVO = orderService.getOrdersByorderNo(orderNo);

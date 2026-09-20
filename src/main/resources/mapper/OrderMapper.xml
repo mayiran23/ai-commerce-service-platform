@@ -59,5 +59,14 @@
         </foreach>
         ORDER BY order_no, id
     </select>
+    <select id="countByStatus" resultType="java.util.Map">
+        SELECT status, COUNT(*) AS n
+        FROM t_order
+        WHERE 1 = 1
+        <if test="userId != null and userId != ''">
+          AND user_id = #{userId}
+        </if>
+        GROUP BY status
+    </select>
 
 </mapper>

@@ -10,6 +10,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
+import java.util.Map;
 
 @Mapper
 public interface OrderMapper {
@@ -29,4 +30,7 @@ public interface OrderMapper {
     //批量查询多个订单的商品明细（给列表接口用，避免每行订单都单独查一次数据库）
     //入参是一个订单号集合，比如 ["SO001","SO002","SO003"]
     List<OrderItem> getItemsByOrderNos(@Param("orderNos") List<String> orderNos);
+
+    //统计各状态的数量
+    List<Map<String, Long>> countByStatus(@Param("userId") Long userId);
 }
