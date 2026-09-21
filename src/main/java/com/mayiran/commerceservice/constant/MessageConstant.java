@@ -9,4 +9,5 @@ public class MessageConstant {
     public static final String UNKNOWN_ERROR = "未知错误";
     public static final String NOT_LOGIN="未登录或登录已过期";
     public static final String ORDER_NOT_FOUND="订单不存在";
+    public static final String AFTER_SALE_NOT_FOUND="工单不存在";
 }

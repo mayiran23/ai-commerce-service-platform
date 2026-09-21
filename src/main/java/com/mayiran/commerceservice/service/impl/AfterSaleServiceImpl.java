@@ -3,15 +3,17 @@ package com.mayiran.commerceservice.service.impl;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
+import com.mayiran.commerceservice.constant.MessageConstant;
 import com.mayiran.commerceservice.context.UserContext;
 import com.mayiran.commerceservice.dto.AfterSalePageDTO;
 import com.mayiran.commerceservice.enums.AfterSaleStatus;
 import com.mayiran.commerceservice.enums.RoleEnum;
+import com.mayiran.commerceservice.exception.AfterSaleNotFoundException;
 import com.mayiran.commerceservice.mapper.AfterSaleMapper;
 import com.mayiran.commerceservice.result.PageResult;
 import com.mayiran.commerceservice.service.AfterSaleService;
-import com.mayiran.commerceservice.vo.AfterSalePageVO;
-import com.mayiran.commerceservice.vo.AfterSaleVO;
+import com.mayiran.commerceservice.service.OrderService;
+import com.mayiran.commerceservice.vo.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,9 @@ import java.util.Map;
 public class AfterSaleServiceImpl implements AfterSaleService {
     @Autowired
     private AfterSaleMapper afterSaleMapper;
+    //复用订单详情拿订单快照
+    @Autowired
+    private OrderService orderService;
 
     @Override
     public AfterSalePageVO pageAfterSales(AfterSalePageDTO afterSalePageDTO) {
@@ -70,6 +75,56 @@ public class AfterSaleServiceImpl implements AfterSaleService {
                 .total(pageInfo.getTotal())
                 .records(records)
                 .stats(stats)
+                .build();
+    }
+
+    @Override
+    public AfterSaleDetailVO getDetail(String ticketNo) {
+        //1:查工单主体
+        AfterSaleVO ticket=afterSaleMapper.getByTicketNo(ticketNo);
+        //查不到抛异常
+        if(ticket==null){
+            log.warn("工单不存在:{}",ticketNo);
+            throw new AfterSaleNotFoundException(MessageConstant.AFTER_SALE_NOT_FOUND);
+        }
+
+        //2:越权检查
+        String role = UserContext.getRole();
+        boolean canSeeAll = RoleEnum.AGENT.name().equals(role) || RoleEnum.ADMIN.name().equals(role);
+        if (!canSeeAll && !ticket.getUserId().equals(UserContext.getUserId())) {
+            log.warn("越权访问工单: ticketNo={}, 工单归属={}, 当前用户={}",
+                    ticketNo, ticket.getUserId(), UserContext.getUserId());
+            throw new AfterSaleNotFoundException(MessageConstant.AFTER_SALE_NOT_FOUND);
+        }
+        //3:流转记录
+        List<AfterSaleFlowVO> flows =afterSaleMapper.getFlowsByTicketNo(ticketNo);
+
+        //4:订单快照
+        OrderVO order=orderService.getOrdersByorderNo(ticket.getOrderNo());
+
+        //5:组装
+        return AfterSaleDetailVO.builder()
+                .ticketNo(ticket.getTicketNo())
+                .orderNo(ticket.getOrderNo())
+                .userId(ticket.getUserId())
+                .type(ticket.getType())
+                .reason(ticket.getReason())
+                .status(ticket.getStatus())
+                .statusText(AfterSaleStatus.textOf(ticket.getStatus()))
+                .source(ticket.getSource())
+                .handlerId(ticket.getHandlerId())
+                .handleRemark(ticket.getHandleRemark())
+                .aiGenerated(ticket.getAiGenerated())
+                .aiConfidence(ticket.getAiConfidence())
+                .createTime(ticket.getCreateTime())
+                .updateTime(ticket.getUpdateTime())
+                .productId(ticket.getProductId())
+                .productName(ticket.getProductName())
+                .userName(ticket.getUserName())
+                .handlerName(ticket.getHandlerName())
+                .order(order)
+                .flows(flows)
+                .allowedTransitions(AfterSaleStatus.allowedTransitionsOf(ticket.getStatus()))
                 .build();
     }
 }

@@ -8,6 +8,7 @@ import com.mayiran.commerceservice.context.UserContext;
 import com.mayiran.commerceservice.dto.OrderPageDTO;
 import com.mayiran.commerceservice.entity.OrderItem;
 import com.mayiran.commerceservice.entity.OrderLogistics;
+import com.mayiran.commerceservice.enums.OrderStatus;
 import com.mayiran.commerceservice.enums.RoleEnum;
 import com.mayiran.commerceservice.exception.OrderNotFoundException;
 import com.mayiran.commerceservice.mapper.OrderMapper;
@@ -72,6 +73,7 @@ public class OrderServiceImpl implements OrderService {
             // 4) 把分好堆的明细塞回每条订单，并顺手做 entity -> VO 的转换（复用详情接口那个方法）
             for (OrderVO vo : orderList) {
                 vo.setItems(toItemVOList(itemMap.get(vo.getOrderNo())));
+                vo.setStatusText(OrderStatus.textOf(vo.getStatus()));
             }
         }
 
@@ -107,6 +109,7 @@ public class OrderServiceImpl implements OrderService {
         //查物流信息
         OrderLogistics logistics = orderMapper.getLogistics(orderNo);
         order.setLogistics(toLogisticsVO(logistics));
+        order.setStatusText(OrderStatus.textOf(order.getStatus()));
 
         return order;
     }

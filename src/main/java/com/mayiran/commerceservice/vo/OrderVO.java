@@ -25,6 +25,8 @@ public class OrderVO implements Serializable {
     private Long userId;
     //订单状态
     private String status;
+    //订单状态中文
+    private String statusText;
     //总金额
     private BigDecimal totalAmount;
     //付款金额
