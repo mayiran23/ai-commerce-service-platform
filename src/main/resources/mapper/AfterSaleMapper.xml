@@ -4,6 +4,43 @@
 <mapper namespace="com.mayiran.commerceservice.mapper.AfterSaleMapper">
 
 
-
+    <select id="countByStatus" resultType="java.util.Map">
+        SELECT status, COUNT(*) AS n
+        From t_after_sale
+        WHERE 1=1
+        <if test="userId != null">
+            AND user_id = #{userId}
+        </if>
+        GROUP BY status
+    </select>
+    <select id="pageAfterSales" resultType="com.mayiran.commerceservice.vo.AfterSaleVO">
+        SELECT
+        a.ticket_no, a.order_no, a.user_id, a.type, a.reason, a.status,
+        a.source, a.handler_id, a.handle_remark, a.ai_generated, a.ai_confidence,
+        a.create_time, a.update_time,
+        i.product_id, i.product_name,
+        u1.nickname AS user_name,
+        u2.nickname AS handler_name
+        FROM t_after_sale a
+        LEFT JOIN t_order_item i ON a.order_item_id = i.id
+        LEFT JOIN t_user u1      ON a.user_id       = u1.id
+        LEFT JOIN t_user u2      ON a.handler_id    = u2.id
+        WHERE 1 = 1
+        <if test="userId != null">
+            AND a.user_id = #{userId}
+        </if>
+        <if test="status != null and status != ''">
+            AND a.status = #{status}
+        </if>
+        <if test="source != null and source != ''">
+            AND a.source = #{source}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND ( a.ticket_no    LIKE CONCAT('%', #{keyword}, '%')
+            OR a.order_no     LIKE CONCAT('%', #{keyword}, '%')
+            OR i.product_name LIKE CONCAT('%', #{keyword}, '%') )
+        </if>
+        ORDER BY a.create_time DESC
+    </select>
 
 </mapper>
