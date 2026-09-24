@@ -19,4 +19,12 @@ public interface OrderService {
      * @return
      */
     OrderVO getOrdersByorderNo(String orderNo);
+
+    /**
+     * 给AI内部接口用:显式传userId校验归属,不依赖登录态
+     * @param orderNo
+     * @param userId
+     * @return
+     */
+    OrderVO getOrderForInternal(String orderNo, Long userId);
 }

@@ -1,5 +1,6 @@
 package com.mayiran.commerceservice.config;
 
+import com.mayiran.commerceservice.interceptor.InternalInterceptor;
 import com.mayiran.commerceservice.interceptor.LoginInterceptor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,11 +17,16 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Autowired
     private LoginInterceptor loginInterceptor;
+    @Autowired
+    private InternalInterceptor internalInterceptor;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(loginInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/api/auth/login");
+
+        registry.addInterceptor(internalInterceptor)
+                .addPathPatterns("/internal/**");
     }
 }

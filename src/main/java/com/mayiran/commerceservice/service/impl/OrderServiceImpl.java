@@ -113,6 +113,32 @@ public class OrderServiceImpl implements OrderService {
 
         return order;
     }
+
+    @Override
+    public OrderVO getOrderForInternal(String orderNo, Long userId) {
+        //1:查订单主体
+        OrderVO order=orderMapper.getByOrderNo(orderNo);
+        if(order==null){
+            log.warn("内部接口-订单不存在:{}",orderNo);
+            throw new OrderNotFoundException(MessageConstant.ORDER_NOT_FOUND);
+        }
+
+        //2:归属校验(用参数userId)
+        if(userId==null||!order.getUserId().equals(userId)){
+            log.warn("内部接口-越权,orderNo={},订单归属={},传入userId={}"
+                    ,orderNo,order.getUserId(),userId);
+            throw new OrderNotFoundException(MessageConstant.ORDER_NOT_FOUND);
+        }
+
+        //3:明细(含退货资格计算)+物流+状态中文,与详情接口完全一致
+        List<OrderItem> items = orderMapper.getItems(orderNo);
+        order.setItems(toItemVOList(items));
+        OrderLogistics logistics = orderMapper.getLogistics(orderNo);
+        order.setLogistics(toLogisticsVO(logistics));
+        order.setStatusText(OrderStatus.textOf(order.getStatus()));
+        return order;
+    }
+
     private OrderLogisticsVO toLogisticsVO(OrderLogistics logistics){
         if(logistics==null){
             return null;
