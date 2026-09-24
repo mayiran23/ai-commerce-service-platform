@@ -2,6 +2,22 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
 <mapper namespace="com.mayiran.commerceservice.mapper.AfterSaleMapper">
+    <insert id="insertAfterSale">
+        INSERT INTO t_after_sale
+        (ticket_no, order_no, order_item_id, user_id, type, reason,
+         status, source, handler_id,
+         handle_remark, ai_generated, ai_confidence, create_time, update_time)
+        VALUES (#{ticketNo}, #{orderNo}, #{orderItemId}, #{userId}, #{type}, #{reason},
+         #{status}, #{source}, #{handlerId},
+         #{handleRemark}, #{aiGenerated}, #{aiConfidence}, #{createTime}, #{updateTime})
+    </insert>
+    <insert id="insertFlow">
+        INSERT INTO t_after_sale_flow
+        (ticket_no, from_status, to_status, operator_id, operator_type, remark, create_time)
+        VALUES
+            (#{ticketNo}, #{fromStatus}, #{toStatus}, #{operatorId}, #{operatorType}, #{remark}, #{createTime})
+
+    </insert>
 
 
     <select id="countByStatus" resultType="java.util.Map">
@@ -65,6 +81,31 @@
                  LEFT JOIN t_user u ON f.operator_id = u.id
         WHERE f.ticket_no = #{ticketNo}
         ORDER BY f.create_time ASC, f.id ASC
+    </select>
+    <select id="getOrderItemId" resultType="java.lang.Long">
+        SELECT i.id
+        FROM t_order_item i
+        WHERE i.order_no = #{orderNo}
+        AND i.product_id = #{productId}
+        LIMIT 1
+    </select>
+    <select id="getActiveTicket" resultType="com.mayiran.commerceservice.entity.AfterSale">
+        SELECT a.id, a.ticket_no, a.order_no, a.order_item_id, a.user_id, a.type,
+               a.reason, a.status, a.ai_generated, a.ai_confidence, a.source,
+               a.handler_id, a.handle_remark, a.create_time, a.update_time
+        FROM t_after_sale a
+                 JOIN t_order_item i ON a.order_item_id = i.id
+        WHERE a.order_no   = #{orderNo}
+          AND i.product_id = #{productId}
+          AND a.type       = #{type}
+          AND a.status IN ('PENDING', 'MANUAL_REVIEW')
+        ORDER BY a.create_time DESC
+            LIMIT 1
+    </select>
+    <select id="getMaxTicketNoOfDay" resultType="java.lang.String">
+        SELECT MAX(ticket_no)
+        FROM t_after_sale
+        WHERE ticket_no LIKE CONCAT (#{dayPrefix},'%')
     </select>
 
 </mapper>
