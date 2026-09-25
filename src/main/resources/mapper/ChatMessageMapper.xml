@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.mayiran.commerceservice.mapper.ChatMessageMapper">
+
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO t_chat_message
+        (session_id,role, intent,content,tool_calls,confidence,latency_ms, create_time)
+        VALUES
+        (#{sessionId},#{role}, #{intent},#{content},#{toolCalls},#{confidence},#{latencyMs}, #{createTime})
+    </insert>
+    <select id="getBySessionId" resultType="com.mayiran.commerceservice.entity.ChatMessage">
+        SELECT id, session_id, role, intent, content, tool_calls, confidence, latency_ms, create_time
+        FROM t_chat_message
+        WHERE session_id = #{sessionId}
+        ORDER BY create_time ASC,id ASC
+    </select>
+</mapper>
