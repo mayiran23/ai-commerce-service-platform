@@ -14,5 +14,6 @@ public class MessageConstant {
     public static final String AFTER_SALE_TYPE_INVALID="不支持的售后类型";
     public static final String AFTER_SALE_ITEM_NOT_FOUND="该订单中不存在此商品";
     public static final String SESSION_NOT_FOUND="会话不存在";
+    public static final String USER_NOT_FOUND="用户不存在";
 
 }

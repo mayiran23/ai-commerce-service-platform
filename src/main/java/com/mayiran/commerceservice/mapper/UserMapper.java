@@ -12,4 +12,7 @@ public interface UserMapper {
      */
     @Select("select id, username, password, nickname, phone, role, status from t_user where username = #{username}")
     User getByUsername(String username);
+
+    @Select("select id, username,nickname, phone, role, status from t_user where id = #{id}")
+    User getById(Long id);
 }
