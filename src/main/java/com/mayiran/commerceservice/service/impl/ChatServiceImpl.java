@@ -10,22 +10,18 @@ import com.mayiran.commerceservice.exception.ChatSessionNotFoundException;
 import com.mayiran.commerceservice.mapper.ChatMessageMapper;
 import com.mayiran.commerceservice.mapper.ChatSessionMapper;
 import com.mayiran.commerceservice.service.ChatService;
-import com.mayiran.commerceservice.vo.ChatReplyVO;
-import com.mayiran.commerceservice.vo.ChatSessionVO;
-import com.mayiran.commerceservice.vo.ChatSessionIdVO;
+import com.mayiran.commerceservice.vo.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -133,6 +129,60 @@ public class ChatServiceImpl implements ChatService {
             vo.setLastMessage(summary(vo.getLastMessage(),40));
         }
         return sessions;
+    }
+
+    @Override
+    public List<ChatMessageVO> getHistory(Long userId, String sessionId) {
+        //1:参数检验
+        if(sessionId==null||sessionId.isBlank()){
+            throw new ChatSessionNotFoundException(MessageConstant.SESSION_NOT_FOUND);
+        }
+
+        //2:越权检验
+        ChatSession session = chatSessionMapper.getBySessionId(sessionId);
+        String role=UserContext.getRole();
+
+        boolean canQuery="AGENT".equals(role)||"ADMIN".equals(role);
+        if(session==null||(!canQuery&&!session.getUserId().equals(userId))){
+            throw new ChatSessionNotFoundException(MessageConstant.SESSION_NOT_FOUND);
+        }
+
+        //3:取消息
+        List<ChatMessage> messages = chatMessageMapper.getBySessionId(sessionId);
+
+        //4:entity转vo
+        List<ChatMessageVO> result=new ArrayList<>(messages.size());
+        for (ChatMessage m : messages) {
+            result.add(ChatMessageVO.builder()
+                    .role(m.getRole())
+                    .content(m.getContent())
+                    .intent(m.getIntent())
+                    .confidence(m.getConfidence())
+                    .latencyMs(m.getLatencyMs())
+                    .createTime(m.getCreateTime())
+                    .tools(parseTools(m.getToolCalls()))
+                    .build());
+        }
+        log.info("查询历史消息,sessionId:{},共{}条",sessionId,result.size());
+        return result;
+    }
+
+
+    /**
+     * 把库里存的tool_calls JSON字符串还原成对象数组
+     * @param json
+     * @return
+     */
+    private List<ToolCallVO> parseTools(String json) {
+        if(json==null||json.isBlank()){
+            return Collections.emptyList();
+        }
+        try{
+            return objectMapper.readValue(json, new TypeReference<List<ToolCallVO>>() {});
+        }catch (Exception e){
+            log.warn("工具调用记录反序列化失败,已忽略",e);
+            return Collections.emptyList();
+        }
     }
 
     /**

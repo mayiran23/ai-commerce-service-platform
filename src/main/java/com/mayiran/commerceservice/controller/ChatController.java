@@ -5,6 +5,7 @@ import com.mayiran.commerceservice.dto.ChatSendDTO;
 import com.mayiran.commerceservice.dto.ChatSessionDTO;
 import com.mayiran.commerceservice.result.Result;
 import com.mayiran.commerceservice.service.ChatService;
+import com.mayiran.commerceservice.vo.ChatMessageVO;
 import com.mayiran.commerceservice.vo.ChatReplyVO;
 import com.mayiran.commerceservice.vo.ChatSessionVO;
 import com.mayiran.commerceservice.vo.ChatSessionIdVO;
@@ -52,6 +53,12 @@ public class ChatController {
         log.info("获取会话Id:{}", dto.getUserId());
         ChatSessionIdVO vo=chatService.getSessionId(dto);
         return Result.success(vo);
+    }
 
+    @GetMapping("/history")
+    public Result<List<ChatMessageVO>> getHistory(String sessionId){
+        Long userId = UserContext.getUserId();
+        log.info("查询历史消息请求:当前用户:{}",userId);
+        return Result.success(chatService.getHistory(userId,sessionId));
     }
 }
