@@ -6,6 +6,7 @@ import com.github.pagehelper.PageInfo;
 import com.mayiran.commerceservice.constant.MessageConstant;
 import com.mayiran.commerceservice.context.UserContext;
 import com.mayiran.commerceservice.dto.OrderPageDTO;
+import com.mayiran.commerceservice.dto.SearchDTO;
 import com.mayiran.commerceservice.entity.OrderItem;
 import com.mayiran.commerceservice.entity.OrderLogistics;
 import com.mayiran.commerceservice.enums.OrderStatus;
@@ -33,6 +34,59 @@ import java.util.Map;
 public class OrderServiceImpl implements OrderService {
     @Autowired
     private OrderMapper orderMapper;
+    //内部搜索单次最多返回几条
+    private static final int MAX_INTERNAL_SEARCH_LIMIT=20;
+
+    /**
+     * 内部接口模糊查询订单
+     * @param searchDTO
+     * @return
+     */
+    @Override
+    public List<OrderVO> searchOrderForInternal(SearchDTO searchDTO) {
+        //1:userId是必填的,AI只能看到它正在服务的这个用户的订单
+        if(searchDTO==null||searchDTO.getUserId()==null){
+            log.warn("内部接口-订单搜索缺少userId");
+            throw new OrderNotFoundException(MessageConstant.ORDER_NOT_FOUND);
+        }
+
+        //2:limit兜底,默认是5,上限是20
+        if(searchDTO.getLimit()<=0){
+            searchDTO.setLimit(5);
+        }else if(searchDTO.getLimit()>MAX_INTERNAL_SEARCH_LIMIT){
+            searchDTO.setLimit(MAX_INTERNAL_SEARCH_LIMIT);
+        }
+
+        //3:查订单主体
+        List<OrderVO> orders=orderMapper.searchForInternal(searchDTO);
+
+        //4:查不到不抛异常,返回空数组
+        if(orders==null||orders.isEmpty()){
+            log.info("内部接口-订单搜索无结果");
+            return new ArrayList<>();
+        }
+
+        //5:批量补商品明细
+        List<String> orderNos=new ArrayList<>(orders.size());
+        for(OrderVO vo:orders){
+            orderNos.add(vo.getOrderNo());
+        }
+        List<OrderItem> items=orderMapper.getItemsByOrderNos(orderNos);
+
+        Map<String,List<OrderItem>> itemMap=new HashMap<>();
+        for (OrderItem item : items) {
+            itemMap.computeIfAbsent(item.getOrderNo(), k -> new ArrayList<>()).add(item);
+        }
+
+        //6:塞明细+补状态中文
+        for (OrderVO vo : orders) {
+            vo.setItems(toItemVOList(itemMap.get(vo.getOrderNo())));
+            vo.setStatusText(OrderStatus.textOf(vo.getStatus()));
+        }
+
+        log.info("内部接口-订单搜索命中{}条",orders.size());
+        return orders;
+    }
 
     @Override
     public PageResult<OrderVO> pageOrders(OrderPageDTO orderPageDTO) {

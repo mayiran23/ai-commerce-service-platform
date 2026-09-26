@@ -2,6 +2,7 @@ package com.mayiran.commerceservice.mapper;
 
 import com.github.pagehelper.Page;
 import com.mayiran.commerceservice.dto.OrderPageDTO;
+import com.mayiran.commerceservice.dto.SearchDTO;
 import com.mayiran.commerceservice.entity.OrderItem;
 import com.mayiran.commerceservice.entity.OrderLogistics;
 import com.mayiran.commerceservice.vo.OrderVO;
@@ -33,4 +34,6 @@ public interface OrderMapper {
 
     //统计各状态的数量
     List<Map<String, Long>> countByStatus(@Param("userId") Long userId);
+
+    List<OrderVO> searchForInternal(SearchDTO searchDTO);
 }
