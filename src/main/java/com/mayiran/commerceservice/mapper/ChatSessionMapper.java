@@ -1,8 +1,11 @@
 package com.mayiran.commerceservice.mapper;
 
 import com.mayiran.commerceservice.entity.ChatSession;
+import com.mayiran.commerceservice.vo.ChatSessionVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 @Mapper
 public interface ChatSessionMapper {
@@ -12,4 +15,6 @@ public interface ChatSessionMapper {
 
     //按会话号进行查询
     ChatSession getBySessionId(@Param("sessionId") String sessionId);
+
+    List<ChatSessionVO> listByUserId(@Param("userId") Long userId);
 }

@@ -13,4 +13,39 @@
         FROM t_chat_session
         WHERE session_id = #{sessionId}
     </select>
+    <select id="listByUserId" resultType="com.mayiran.commerceservice.vo.ChatSessionVO">
+
+            SELECT
+            s.session_id,
+            s.user_id,
+            u.nickname AS user_name,
+
+            (SELECT m1.content
+            FROM t_chat_message m1
+            WHERE m1.session_id = s.session_id
+            AND m1.role = 'user'
+            AND m1.content IS NOT NULL
+            AND m1.content &lt;&gt; ''
+            ORDER BY m1.id ASC
+            LIMIT 1) AS title,
+
+            (SELECT m2.content
+            FROM t_chat_message m2
+            WHERE m2.session_id = s.session_id
+            ORDER BY m2.id DESC
+            LIMIT 1) AS last_message,
+            s.create_time,
+            s.update_time
+            FROM t_chat_session s
+
+            LEFT JOIN t_user u ON u.id = s.user_id
+            <where>
+
+                <if test="userId != null">
+                    s.user_id = #{userId}
+                </if>
+            </where>
+
+            ORDER BY s.update_time DESC, s.id DESC
+        </select>
 </mapper>
