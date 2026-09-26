@@ -18,6 +18,15 @@
             (#{ticketNo}, #{fromStatus}, #{toStatus}, #{operatorId}, #{operatorType}, #{remark}, #{createTime})
 
     </insert>
+    <update id="updateStatus">
+        UPDATE t_after_sale
+        SET status = #{toStatus},
+        handler_id = #{userId},
+        handle_remark = #{remark},
+        update_time = NOW()
+        WHERE ticket_no = #{ticketNo}
+        AND status = #{fromStatus}
+    </update>
 
 
     <select id="countByStatus" resultType="java.util.Map">

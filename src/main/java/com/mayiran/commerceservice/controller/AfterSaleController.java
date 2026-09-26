@@ -2,12 +2,14 @@ package com.mayiran.commerceservice.controller;
 
 import com.mayiran.commerceservice.dto.AfterSaleCreateDTO;
 import com.mayiran.commerceservice.dto.AfterSalePageDTO;
+import com.mayiran.commerceservice.dto.StatusFlowDTO;
 import com.mayiran.commerceservice.result.PageResult;
 import com.mayiran.commerceservice.result.Result;
 import com.mayiran.commerceservice.service.AfterSaleService;
 import com.mayiran.commerceservice.vo.AfterSaleCreateVO;
 import com.mayiran.commerceservice.vo.AfterSaleDetailVO;
 import com.mayiran.commerceservice.vo.AfterSalePageVO;
+import com.mayiran.commerceservice.vo.StatusFlowVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -49,4 +51,13 @@ public class AfterSaleController {
         AfterSaleCreateVO vo=afterSaleService.createAfterSale(afterSaleCreateDTO);
         return Result.success(vo);
     }
+
+    @PostMapping("/{ticketNo}/transition")
+    public Result<StatusFlowVO> transition(@PathVariable String ticketNo,
+                                           @RequestBody StatusFlowDTO statusFlowDTO){
+        log.info("售后订单状态流转:{}", statusFlowDTO);
+        StatusFlowVO vo=afterSaleService.transition(ticketNo, statusFlowDTO);
+        return Result.success(vo);
+    }
+
 }

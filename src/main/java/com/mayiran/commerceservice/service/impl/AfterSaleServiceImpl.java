@@ -7,13 +7,12 @@ import com.mayiran.commerceservice.constant.MessageConstant;
 import com.mayiran.commerceservice.context.UserContext;
 import com.mayiran.commerceservice.dto.AfterSaleCreateDTO;
 import com.mayiran.commerceservice.dto.AfterSalePageDTO;
+import com.mayiran.commerceservice.dto.StatusFlowDTO;
 import com.mayiran.commerceservice.entity.AfterSale;
 import com.mayiran.commerceservice.entity.AfterSaleFlow;
 import com.mayiran.commerceservice.enums.AfterSaleStatus;
 import com.mayiran.commerceservice.enums.RoleEnum;
-import com.mayiran.commerceservice.exception.AfterSaleNotFoundException;
-import com.mayiran.commerceservice.exception.AfterSaleParamException;
-import com.mayiran.commerceservice.exception.OrderNotFoundException;
+import com.mayiran.commerceservice.exception.*;
 import com.mayiran.commerceservice.mapper.AfterSaleMapper;
 import com.mayiran.commerceservice.result.PageResult;
 import com.mayiran.commerceservice.service.AfterSaleService;
@@ -245,6 +244,77 @@ public class AfterSaleServiceImpl implements AfterSaleService {
                 .status(AfterSaleStatus.PENDING.name())
                 .message("工单已创建，等待客服审核")
                 .build();
+    }
+
+    /**
+     * 工单状态流转
+     * @param ticketNo
+     * @param statusFlowDTO
+     * @return
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public StatusFlowVO transition(String ticketNo, StatusFlowDTO statusFlowDTO) {
+        //1:参数校验
+        if(ticketNo==null||ticketNo.isBlank()
+                ||statusFlowDTO==null
+                ||statusFlowDTO.getToStatus()==null
+                ||statusFlowDTO.getToStatus().isBlank()){
+            throw new AfterSaleParamException(MessageConstant.AFTER_SALE_PARAM_INVALID);
+        }
+        if(statusFlowDTO.getRemark()==null||statusFlowDTO.getRemark().isBlank()){
+            throw new AfterSaleParamException(MessageConstant.AFTER_SALE_REMARK_REQUIRED);
+        }
+
+        //2:越权检验
+        String role=UserContext.getRole();
+        boolean canHandle=RoleEnum.AGENT.name().equals(role)||RoleEnum.ADMIN.name().equals(role);
+        if(!canHandle){
+            log.warn("越权流转工单:ticket={},当前角色={},当前用户={}",ticketNo,role,UserContext.getUserId());
+            throw new ForbiddenException(MessageConstant.AFTER_SALE_FORBIDDEN);
+        }
+
+        //3:查工单(顺便拿到当前的状态)
+        AfterSaleVO ticket = afterSaleMapper.getByTicketNo(ticketNo);
+        if(ticket==null){
+            throw new AfterSaleNotFoundException(MessageConstant.AFTER_SALE_NOT_FOUND);
+        }
+        String fromStatus = ticket.getStatus();
+        String toStatus = statusFlowDTO.getToStatus();
+
+        //4:状态机校验
+        if(!AfterSaleStatus.allowedTransitionsOf(fromStatus).contains(toStatus)){
+            throw new AfterSaleStatusException("不允许从"+AfterSaleStatus.textOf(fromStatus)
+            +"流转到"+AfterSaleStatus.textOf(toStatus));
+        }
+
+        //真正更新流转状态
+        //先update再insert
+        int rows=afterSaleMapper.updateStatus(ticketNo, fromStatus, toStatus, UserContext.getUserId(),statusFlowDTO.getRemark());
+        if(rows==0){
+            throw new AfterSaleStatusException(MessageConstant.AFTER_SALE_STATUS_CHANGED);
+        }
+
+        //同事务写一条流转记录
+        afterSaleMapper.insertFlow(AfterSaleFlow.builder()
+                .ticketNo(ticketNo)
+                .fromStatus(fromStatus)
+                .toStatus(toStatus)
+                .operatorId(UserContext.getUserId())
+                .operatorType(role)
+                .remark(statusFlowDTO.getRemark())
+                .createTime(LocalDateTime.now())
+                .build());
+
+        log.info("工单流转成功:ticketNo={},{}->{},操作人={}",ticketNo,fromStatus,toStatus,UserContext.getUserId());
+
+        //7:返回流转后的状态
+        return StatusFlowVO.builder()
+                .ticketNo(ticketNo)
+                .status(toStatus)
+                .statusText(AfterSaleStatus.textOf(toStatus))
+                .build();
+
     }
 
     /**

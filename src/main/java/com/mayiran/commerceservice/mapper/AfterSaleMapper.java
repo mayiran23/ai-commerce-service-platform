@@ -34,4 +34,19 @@ public interface AfterSaleMapper {
     void insertAfterSale(AfterSale ticket);
 
     void insertFlow(AfterSaleFlow flow);
+
+    /**
+     * 更新工单状态
+     * @param ticketNo
+     * @param fromStatus
+     * @param toStatus
+     * @param userId
+     * @param remark
+     * @return
+     */
+    int updateStatus(@Param("ticketNo") String ticketNo,
+                     @Param("fromStatus") String fromStatus,
+                     @Param("toStatus") String toStatus,
+                     @Param("userId") Long userId,
+                     @Param("remark") String remark);
 }
