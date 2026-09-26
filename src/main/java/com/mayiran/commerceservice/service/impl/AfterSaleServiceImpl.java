@@ -5,15 +5,20 @@ import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import com.mayiran.commerceservice.constant.MessageConstant;
 import com.mayiran.commerceservice.context.UserContext;
+import com.mayiran.commerceservice.dto.AfterSaleCheckDTO;
 import com.mayiran.commerceservice.dto.AfterSaleCreateDTO;
 import com.mayiran.commerceservice.dto.AfterSalePageDTO;
 import com.mayiran.commerceservice.dto.StatusFlowDTO;
 import com.mayiran.commerceservice.entity.AfterSale;
 import com.mayiran.commerceservice.entity.AfterSaleFlow;
+import com.mayiran.commerceservice.entity.OrderItem;
 import com.mayiran.commerceservice.enums.AfterSaleStatus;
+import com.mayiran.commerceservice.enums.EligibilityCode;
+import com.mayiran.commerceservice.enums.OrderStatus;
 import com.mayiran.commerceservice.enums.RoleEnum;
 import com.mayiran.commerceservice.exception.*;
 import com.mayiran.commerceservice.mapper.AfterSaleMapper;
+import com.mayiran.commerceservice.mapper.OrderMapper;
 import com.mayiran.commerceservice.result.PageResult;
 import com.mayiran.commerceservice.service.AfterSaleService;
 import com.mayiran.commerceservice.service.OrderService;
@@ -43,6 +48,8 @@ public class AfterSaleServiceImpl implements AfterSaleService {
     //复用订单详情拿订单快照
     @Autowired
     private OrderService orderService;
+    @Autowired
+    private OrderMapper orderMapper;
 
     /**
      * 分页查询工单
@@ -315,6 +322,82 @@ public class AfterSaleServiceImpl implements AfterSaleService {
                 .statusText(AfterSaleStatus.textOf(toStatus))
                 .build();
 
+    }
+
+    @Override
+    public AfterSaleEligibilityVO checkEligibleForInternal(AfterSaleCheckDTO dto) {
+        //1:进行参数校验
+        if(dto==null||
+        dto.getOrderNo()==null||dto.getOrderNo().isBlank()||
+        dto.getProductId()==null){
+            throw new AfterSaleParamException(MessageConstant.AFTER_SALE_PARAM_INVALID);
+        }
+        String orderNo = dto.getOrderNo();
+        Long productId = dto.getProductId();
+
+        //2:订单必须存在
+        OrderVO order = orderMapper.getByOrderNo(orderNo);
+        if(order==null){
+            throw new OrderNotFoundException(MessageConstant.ORDER_NOT_FOUND);
+        }
+
+        //3:订单中的商品必须存在
+        List<OrderItem> items = orderMapper.getItems(orderNo);
+        OrderItem target=null;
+        if(items!=null){
+            for(OrderItem item:items){
+                if(item.getProductId().equals(productId)){
+                    target=item;
+                    break;
+                }
+            }
+        }
+        if(target==null){
+            throw new AfterSaleParamException(MessageConstant.AFTER_SALE_ITEM_NOT_FOUND);
+        }
+        //截止时间是按"签收时间"+7天算好的
+        LocalDateTime deadline = target.getRefundDeadline();
+
+        //4:未签收,退货的前提是已签收
+        if(!OrderStatus.RECEIVED.name().equals(order.getStatus())){
+            //订单状态不是已签收,不允许退货
+            boolean cancelled=OrderStatus.CANCELLED.name().equals(order.getStatus());
+            return AfterSaleEligibilityVO.builder()
+                    .eligible(false)
+                    .code(EligibilityCode.NOT_RECEIVED.name())
+                    .message(cancelled?
+                            "该订单已取消,无需申请售后"
+                            :"该订单还没有签收,签收之后才能申请退货退款")
+                    .suggestManualReview(false)
+                    .refundDeadline(deadline)
+                    .build();
+        }
+
+        //5:已签收
+        LocalDateTime now=LocalDateTime.now();
+        if(deadline!=null && deadline.isAfter(now)){
+            return AfterSaleEligibilityVO.builder()
+                    .eligible(true)
+                    .code(EligibilityCode.OK.name())
+                    .message("该商品在7天无理由退货期内(截止"+deadline.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))+")")
+                    .suggestManualReview(false)
+                    .refundDeadline(deadline)
+                    .build();
+        }
+
+        //6:超期,这是人机协同设计的关键
+        //eligible=false不代表这事办不了,而是代表这事AI不能自己办
+        //所以这里要转人工
+        return AfterSaleEligibilityVO.builder()
+                .eligible(false)
+                .code(EligibilityCode.OVER_DEADLINE.name())
+                .message("该商品已超过7天无理由退货期"
+                +(deadline==null?"":"("+deadline.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))+")")
+                +",建议转人工审核")
+                .suggestManualReview(true)
+                .refundDeadline(deadline)
+                .build();
+        
     }
 
     /**
