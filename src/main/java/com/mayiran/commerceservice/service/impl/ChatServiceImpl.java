@@ -35,6 +35,10 @@ public class ChatServiceImpl implements ChatService {
     private RestClient aiRestClient;
     @Autowired
     private ObjectMapper objectMapper;
+    //多轮对话上下文最多带最近十条
+    private static final int HISTORY_LIMIT=10;
+    //单条历史消息最多回传500字
+    private static final int HISTORY_ITEM_MAX=500;
 
     @Override
     public ChatReplyVO chat(Long userId, ChatSendDTO chatSendDTO) {
@@ -50,7 +54,10 @@ public class ChatServiceImpl implements ChatService {
                 throw new ChatSessionNotFoundException(MessageConstant.SESSION_NOT_FOUND);
             }
         }
-        //2:先把用户这句话落库
+
+        //2:先取最近几轮上下文
+        List<Map<String,String>> history=loadHistory(sessionId);
+        //3:先把用户这句话落库
         chatMessageMapper.insert(ChatMessage.builder()
                 .sessionId(sessionId)
                 .role("user")
@@ -58,7 +65,7 @@ public class ChatServiceImpl implements ChatService {
                 .createTime(LocalDateTime.now())
                 .build());
 
-        //3:调Python AI服务,失败就降级
+        //4:调Python AI服务,失败就降级
         ChatReplyVO reply;
 
         try{
@@ -66,6 +73,7 @@ public class ChatServiceImpl implements ChatService {
             body.put("userId",userId);
             body.put("sessionId",sessionId);
             body.put("message",chatSendDTO.getMessage());
+            body.put("history",history);
 
             reply=aiRestClient.post()
                     .uri("/chat")
@@ -97,6 +105,33 @@ public class ChatServiceImpl implements ChatService {
 
         reply.setSessionId(sessionId);
         return reply;
+    }
+
+    private List<Map<String, String>> loadHistory(String sessionId) {
+        List<ChatMessage> recent = chatMessageMapper.getRecentBySessionId(sessionId, HISTORY_LIMIT);
+        if(recent==null||recent.isEmpty()){
+            return Collections.emptyList();
+        }
+        //SQL是倒叙取的,最近的在前,这里反转时间正序,模型按顺序读会好理解
+        Collections.reverse(recent);
+
+        List<Map<String,String>> history=new ArrayList<>(recent.size());
+
+        for (ChatMessage m : recent) {
+            if(m.getContent()==null||m.getContent().isBlank()){
+                continue;
+            }
+            String content=m.getContent();
+            if(content.length()>HISTORY_ITEM_MAX){
+                content=content.substring(0, HISTORY_ITEM_MAX)+"...";
+            }
+            Map<String,String> item=new HashMap<>();
+            item.put("role",m.getRole());
+            item.put("content",content);
+            history.add(item);
+        }
+        log.info("拼装多轮上下文,sessionId:{},共{}条",sessionId,history.size());
+        return history;
     }
 
     @Override

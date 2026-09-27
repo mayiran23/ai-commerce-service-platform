@@ -181,3 +181,4 @@ CREATE TABLE t_eval_result (
   create_time    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_batch (batch_no)
 ) COMMENT '评估结果表';
+

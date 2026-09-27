@@ -85,6 +85,11 @@ SYSTEM_PROMPT = (
     "不要一律给高分，这个数值会决定工单是自动通过还是转人工。"
 
     "工具查不到数据时如实告知用户，不要编造。"
+    "【怎么理解用户的话】"
+    "对话历史里已经出现过的信息（订单号、商品名、你之前的结论）要记住并接着用，"
+    "用户的话常常很省略 —— 只说「确认」「就那个」「换一个」时，"
+    "结合上文判断他指的是哪笔订单、哪件商品，不要反复追问已经说过的信息。"
+
 )
 
 
@@ -572,12 +577,16 @@ TOOLS = [
 # ============================================================
 # 4. 请求体格式
 # ============================================================
+class HistoryMessage(BaseModel):
+    """一轮历史对话,java端只回传role和content两样"""
+    role: str
+    content: str
 class ChatRequest(BaseModel):
     """对应 Java 传来的 {"userId":1,"sessionId":"S2026...","message":"..."}"""
     userId: int                     # 必填。由 Java 从 JWT 解析后注入，前端伪造不了
     sessionId: str | None = None    # 可选。传 None 表示新建会话
     message: str                    # 必填。用户问的那句话
-
+    history: list[HistoryMessage] | None = None
 
 # ============================================================
 # 5. 接口
@@ -627,9 +636,12 @@ def chat(req: ChatRequest):
     # messages 是"对话历史"，本次请求的全部上下文都在这里
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": req.message},
     ]
-
+    #把java传过来的几轮历史按顺序拼进去
+    for h in (req.history or []):
+        if h.role in ("user","assistant") and h.content:
+            messages.append({"role": h.role, "content": h.content})
+    messages.append({"role": "user", "content": req.message})
     # 按本次请求的 userId 现场组装工具。
     # 每多一个工具就在这里加一行,key 必须和 TOOLS 里的 name 逐字一致
     tool_impl = {

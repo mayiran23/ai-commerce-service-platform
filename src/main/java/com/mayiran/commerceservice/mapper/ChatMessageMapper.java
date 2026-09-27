@@ -14,5 +14,9 @@ public interface ChatMessageMapper {
     //按照会话取全部消息
     List<ChatMessage> getBySessionId(@Param("sessionId") String sessionId);
 
+    //取最近N条消息,用于给AI拼多轮上下文
+    List<ChatMessage> getRecentBySessionId(@Param("sessionId") String sessionId,
+                                           @Param("limit") int limit);
+
 
 }

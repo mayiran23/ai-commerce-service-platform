@@ -16,4 +16,12 @@
         WHERE session_id = #{sessionId}
         ORDER BY create_time ASC,id ASC
     </select>
+    <select id="getRecentBySessionId" resultType="com.mayiran.commerceservice.entity.ChatMessage">
+        SELECT id, session_id, role, intent, content, tool_calls, confidence, latency_ms, create_time
+        FROM t_chat_message
+        WHERE session_id = #{sessionId}
+          AND role IN ('user','assistant')
+        ORDER BY id DESC
+            LIMIT #{limit}
+    </select>
 </mapper>
