@@ -641,19 +641,32 @@ def chat(req: ChatRequest):
     }
     used_tools = []
 
-    # ---------- 第一轮：把问题 + 工具清单发给模型，让它自己决定要不要调工具 ----------
-    completion = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        tools=TOOLS,          # 关键：带上工具清单，模型才知道自己有哪些本事
-        temperature=0.3,
-        timeout=30,
-    )
-    msg = completion.choices[0].message
+    # ---------- 工具调用循环 ----------
+    # 模型可以连续调多轮工具，直到它决定给出最终回答。
+    # ⚠️ 这里必须是循环而不是"两轮"：
+    # 像"先搜订单 → 再校验退货资格 → 最后建工单"这种多步链路，
+    # 如果只在第一轮带 tools，模型第二轮想继续调工具时无处可调，
+    # 就会把调用意图当纯文本吐出来，直接把 <｜｜DSML｜｜invoke> 之类的
+    # 原始串漏进用户可见的 answer 里。
+    MAX_ROUNDS = 5
+    answer = None
+    for _ in range(MAX_ROUNDS):
+        completion = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            tools=TOOLS,          # 关键：带上工具清单，模型才知道自己有哪些本事
+            temperature=0.3,
+            timeout=30,
+        )
+        msg = completion.choices[0].message
 
-    if msg.tool_calls:
+        # 模型不再要求调工具 → 这一轮就是最终回答，收工
+        if not msg.tool_calls:
+            answer = msg.content or "抱歉，我这边没能理解您的问题，可以换个说法再讲一次吗？"
+            break
+
         # 模型决定调工具了。必须把它的"调用意图"原样塞回对话历史，
-        # 否则第二轮它会不知道自己在回应什么。
+        # 否则下一轮它会不知道自己在回应什么。
         messages.append(msg)
 
         for call in msg.tool_calls:
@@ -675,7 +688,7 @@ def chat(req: ChatRequest):
                 "args": args,
                 "status": "ok" if result.get("ok") else "error",
                 "ms": cost_ms,
-                # 优先用工具自己给的摘要(比如"搜到 3 条订单"),
+                # 优先用工具自己给的摘要(比如"搜到 3 条订单")，
                 # query_order 没有 summary 字段,所以它还是走原来那句"查到订单",行为不变
                 "result": result.get("summary")
                           or ("查到订单" if result.get("ok") else result.get("error")),
@@ -688,19 +701,17 @@ def chat(req: ChatRequest):
                 "tool_call_id": call.id,
                 "content": json.dumps(result, ensure_ascii=False),
             })
-
-        # ---------- 第二轮：把工具查到的数据交给模型，让它组织成人话 ----------
-        # 这一轮不再传 tools，避免模型反复调用陷入死循环
-        completion2 = client.chat.completions.create(
+    else:
+        # 跑满 MAX_ROUNDS 还在调工具（模型钻牛角尖了）：
+        # 去掉 tools 再问最后一次，逼它输出一段人话，
+        # 避免把原始调用串返回给用户
+        completion = client.chat.completions.create(
             model=MODEL,
             messages=messages,
             temperature=0.3,
             timeout=30,
         )
-        answer = completion2.choices[0].message.content
-    else:
-        # 模型觉得不需要工具（比如用户在闲聊），直接用它的回答
-        answer = msg.content
+        answer = completion.choices[0].message.content
 
     return {
         "answer": answer,
