@@ -45,6 +45,11 @@ public class AfterSaleController {
         return Result.success(detail);
     }
 
+    /**
+     * 创建售后订单
+     * @param afterSaleCreateDTO
+     * @return
+     */
     @PostMapping
     public Result<AfterSaleCreateVO> createAfterSale(@RequestBody AfterSaleCreateDTO afterSaleCreateDTO){
         log.info("创建售后订单:{}", afterSaleCreateDTO);
@@ -52,6 +57,12 @@ public class AfterSaleController {
         return Result.success(vo);
     }
 
+    /**
+     * 售后订单状态流转
+     * @param ticketNo
+     * @param statusFlowDTO
+     * @return
+     */
     @PostMapping("/{ticketNo}/transition")
     public Result<StatusFlowVO> transition(@PathVariable String ticketNo,
                                            @RequestBody StatusFlowDTO statusFlowDTO){
@@ -59,5 +70,7 @@ public class AfterSaleController {
         StatusFlowVO vo=afterSaleService.transition(ticketNo, statusFlowDTO);
         return Result.success(vo);
     }
+
+
 
 }

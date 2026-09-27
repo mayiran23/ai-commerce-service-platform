@@ -5,10 +5,7 @@ import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import com.mayiran.commerceservice.constant.MessageConstant;
 import com.mayiran.commerceservice.context.UserContext;
-import com.mayiran.commerceservice.dto.AfterSaleCheckDTO;
-import com.mayiran.commerceservice.dto.AfterSaleCreateDTO;
-import com.mayiran.commerceservice.dto.AfterSalePageDTO;
-import com.mayiran.commerceservice.dto.StatusFlowDTO;
+import com.mayiran.commerceservice.dto.*;
 import com.mayiran.commerceservice.entity.AfterSale;
 import com.mayiran.commerceservice.entity.AfterSaleFlow;
 import com.mayiran.commerceservice.entity.OrderItem;
@@ -29,19 +26,21 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 @Slf4j
 @Service
 public class AfterSaleServiceImpl implements AfterSaleService {
     /** 允许的工单类型（契约 §2.2：REFUND / EXCHANGE / REPAIR） */
     private static final Set<String> VALID_TYPES = Set.of("REFUND", "EXCHANGE", "REPAIR");
+    /**AI置信度阈值:>=0.7走正常审核,<0.7走人工审核*/
+    private static final BigDecimal AI_CONFIDENCE_THRESHOLD=new BigDecimal("0.7");
+    /**内部查工单的返回条数上限为20条*/
+    private static final int MAX_INTERNAL_SEARCH_LIMIT=20;
 
     @Autowired
     private AfterSaleMapper afterSaleMapper;
@@ -324,6 +323,11 @@ public class AfterSaleServiceImpl implements AfterSaleService {
 
     }
 
+    /**
+     * 校验工单是否可创建,退货资格校验
+     * @param dto
+     * @return
+     */
     @Override
     public AfterSaleEligibilityVO checkEligibleForInternal(AfterSaleCheckDTO dto) {
         //1:进行参数校验
@@ -397,7 +401,160 @@ public class AfterSaleServiceImpl implements AfterSaleService {
                 .suggestManualReview(true)
                 .refundDeadline(deadline)
                 .build();
-        
+
+    }
+
+    /**
+     * AI创建工单
+     * @param dto
+     * @return
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AfterSaleCreateVO createByAiForInternal(AfterSaleAICreateDTO dto) {
+        //1:参数校验
+        if(dto==null
+                ||dto.getOrderNo()==null||dto.getOrderNo().isBlank()
+                ||dto.getProductId()==null
+                ||dto.getType()==null||dto.getType().isBlank()){
+            throw new AfterSaleParamException(MessageConstant.AFTER_SALE_PARAM_INVALID);
+        }
+        if(!VALID_TYPES.contains(dto.getType())){
+            throw new AfterSaleParamException(MessageConstant.AFTER_SALE_TYPE_INVALID);
+        }
+
+        //2:查订单
+        OrderVO order = orderMapper.getByOrderNo(dto.getOrderNo());
+        if(order==null){
+            throw new OrderNotFoundException(MessageConstant.ORDER_NOT_FOUND);
+        }
+
+        //3:商品必须在这张订单中
+        Long orderItemId = afterSaleMapper.getOrderItemId(dto.getProductId(), dto.getOrderNo());
+        if(orderItemId==null){
+            throw new AfterSaleParamException(MessageConstant.AFTER_SALE_ITEM_NOT_FOUND);
+        }
+
+        //4:幂等
+        AfterSale existing = afterSaleMapper.getActiveTicket(dto.getOrderNo(), dto.getProductId(), dto.getType());
+        if(existing!=null){
+            //工单已经存在直接返回
+            log.info("内部接口-AI建工单命中幂等,返回已有工单:{}",existing.getTicketNo());
+            return AfterSaleCreateVO.builder()
+                    .ticketNo(existing.getTicketNo())
+                    .status(existing.getStatus())
+                    .message("该商品已有进行中的售后申请,已为您返回原工单")
+                    .build();
+        }
+
+        //5:决定初始状态-这是人机协同的落地点
+        boolean aiGen = Boolean.TRUE.equals(dto.getAiGenerated());
+        BigDecimal aiConfidence = dto.getAiConfidence();
+
+        boolean needHuman;
+        if(aiConfidence==null){
+            //置信度缺失->转人工
+            needHuman=aiGen;
+        }else {
+            //置信度存在->根据置信度判断是否转人工
+            needHuman=aiConfidence.compareTo(AI_CONFIDENCE_THRESHOLD)<0;
+        }
+
+        String status=needHuman?AfterSaleStatus.MANUAL_REVIEW.name():AfterSaleStatus.PENDING.name();
+
+        //6:创建工单
+        LocalDateTime now = LocalDateTime.now();
+        AfterSale ticket=new AfterSale();
+        ticket.setOrderNo(dto.getOrderNo());
+        ticket.setOrderItemId(orderItemId);
+        //工单归属于订单的主人 —— 内部接口没有登录态,只能这么取
+        ticket.setUserId(order.getUserId());
+        ticket.setType(dto.getType());
+        ticket.setReason(dto.getReason());
+        ticket.setStatus(status);
+        ticket.setSource(aiGen ? "AI" : "SYSTEM");
+        //⚠️ ai_generated 是 NOT NULL 列,传 null 会直接 SQL 异常 → 必须是 0/1 的 Integer
+        ticket.setAiGenerated(aiGen ? 1 : 0);
+        //置信度只对 AI 建的单有意义,人工建的单存 null 更干净
+        ticket.setAiConfidence(aiGen ? aiConfidence : null);
+        ticket.setCreateTime(now);
+        ticket.setUpdateTime(now);
+
+        String ticketNo=null;
+        for(int attempt=1;attempt<=3;attempt++){
+            ticketNo=generateTicketNo();
+            ticket.setTicketNo(ticketNo);
+            try{
+                afterSaleMapper.insertAfterSale(ticket);
+                break;
+            }catch (DuplicateKeyException e){
+                log.warn("工单号冲突,第{}次尝试:{}", attempt, ticketNo);
+                if(attempt==3){
+                    throw new AfterSaleParamException("工单号生成失败,请稍后重试");
+                }
+            }
+        }
+
+        //7:同事务写一条流转记录
+        afterSaleMapper.insertFlow(AfterSaleFlow.builder()
+                .ticketNo(ticketNo)
+                .fromStatus(null)
+                .toStatus(status)
+                .operatorId(null)
+                .operatorType(aiGen?"AI":"SYSTEM")
+                .remark(aiGen?"AI客服根据用户诉求创建工单":"系统创建")
+                .createTime(now)
+                .build());
+
+        log.info("内部接口-AI建单成功:ticketNo={},status={},confidence={}", ticketNo, status, aiConfidence);
+
+        //返回响应结果
+        return AfterSaleCreateVO.builder()
+                .ticketNo(ticketNo)
+                .status(status)
+                .message(needHuman
+                        ? "工单已创建,待人工审核"
+                        :"工单已创建,等待客服审核")
+                .build();
+    }
+
+    /**
+     * 内部接口-查询工单
+     * @param dto
+     * @return
+     */
+    @Override
+    public List<AfterSaleVO> searchForInternal(AfterSaleSearchDTO dto) {
+        //1:参数校验,userId是必填的
+        if(dto==null||dto.getUserId()==null){
+            log.warn("内部接口-工单搜索缺少userId");
+            throw new AfterSaleParamException(MessageConstant.AFTER_SALE_PARAM_INVALID);
+        }
+
+        //2:limit兜底,下限是5,上限是20
+        if(dto.getLimit()<=0){
+            dto.setLimit(5);
+        }else if(dto.getLimit()>MAX_INTERNAL_SEARCH_LIMIT){
+            dto.setLimit(MAX_INTERNAL_SEARCH_LIMIT);
+        }
+
+        //3:查
+        List<AfterSaleVO> tickets=afterSaleMapper.searchForInternal(dto);
+
+        //4:查不到不抛异常,返回空数组
+        if(tickets==null||tickets.isEmpty()){
+            log.info("内部接口-工单搜索无结果:userId:{}",dto.getUserId());
+            return new ArrayList<>();
+        }
+
+        //5:补状态中文
+        for (AfterSaleVO vo : tickets) {
+            vo.setStatusText(AfterSaleStatus.textOf(vo.getStatus()));
+        }
+
+        log.info("内部接口-工单搜索命中{}条", tickets.size());
+
+        return tickets;
     }
 
     /**

@@ -85,12 +85,26 @@ UI.shell({ active: 'chat', title: '智能客服',
 
 var INTENT_TEXT = {
   ORDER_QUERY: '查订单/物流',
+  AFTER_SALE_QUERY: '查售后进度',
+  AFTER_SALE_CREATE: '提交售后申请',
   AFTER_SALE_APPLY: '申请售后',
   POLICY_QA: '政策咨询',
+  CHAT: '闲聊',
+  // Java 侧在 AI 服务不可用时会回 intent=FALLBACK（见 ChatReplyVO.fallback），
+  // 不写这一条界面上就会直接显示英文 "FALLBACK"
+  FALLBACK: 'AI 服务暂不可用',
   OTHER: '其他'
 };
+// 售后相关的两种意图统一用 warn，这样扫一眼就能把"售后"和"订单"区分开
 var INTENT_CLS = {
-  ORDER_QUERY: 'info', AFTER_SALE_APPLY: 'warn', POLICY_QA: 'ok', OTHER: 'muted'
+  ORDER_QUERY: 'info',
+  AFTER_SALE_QUERY: 'warn',
+  AFTER_SALE_CREATE: 'warn',
+  AFTER_SALE_APPLY: 'warn',
+  POLICY_QA: 'ok',
+  CHAT: 'muted',
+  FALLBACK: 'muted',
+  OTHER: 'muted'
 };
 
 var QUICK = [

@@ -2,6 +2,7 @@ package com.mayiran.commerceservice.mapper;
 
 import com.github.pagehelper.Page;
 import com.mayiran.commerceservice.dto.AfterSalePageDTO;
+import com.mayiran.commerceservice.dto.AfterSaleSearchDTO;
 import com.mayiran.commerceservice.entity.AfterSale;
 import com.mayiran.commerceservice.entity.AfterSaleFlow;
 import com.mayiran.commerceservice.vo.AfterSaleFlowVO;
@@ -49,4 +50,6 @@ public interface AfterSaleMapper {
                      @Param("toStatus") String toStatus,
                      @Param("userId") Long userId,
                      @Param("remark") String remark);
+
+    List<AfterSaleVO> searchForInternal(AfterSaleSearchDTO dto);
 }
