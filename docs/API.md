@@ -941,7 +941,9 @@ try {
 **全部要求请求头 `X-Internal-Token: <密钥>`**，密钥写在 `application.properties`：
 
 ```properties
-internal.token=dev-internal-token-change-me
+# 自己编一串随机字符串，Python 端的 INTERNAL_TOKEN 必须填一样的值
+# 注意：真实值只写在 application.properties（已被 .gitignore 忽略），不要写进文档
+internal.token=<你的内部密钥>
 ai.service.url=http://localhost:8000
 ```
 
@@ -1289,6 +1291,6 @@ curl -s -X POST http://localhost:8080/api/after-sales/AS20260912006/transition \
 # 12. 内部接口：不带 token 应返回 401
 curl -s http://localhost:8080/internal/orders/SO2026090900353?userId=1
 # 带上正确 token
-curl -s -H "X-Internal-Token: dev-internal-token-change-me" \
+curl -s -H "X-Internal-Token: <你的内部密钥>" \
   "http://localhost:8080/internal/orders/SO2026090900353?userId=1"
 ```
