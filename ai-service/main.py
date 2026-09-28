@@ -95,6 +95,20 @@ SYSTEM_PROMPT = (
 
 app = FastAPI(title="AI Commerce Service", version="0.4.0")
 
+def java_error_message(resp) -> str:
+    """
+    内部接口返回非 200 时，尽量把 Java 给的具体原因取出来交给模型。
+
+    为什么不能只说一句"HTTP 400"：模型要靠这句话判断下一步怎么改。
+    实测：返回"该订单中不存在此商品"时，它会自己去查订单、拿到正确的 productId 再重试。
+    """
+    try:
+        data = resp.json()
+        msg = data.get("msg") if isinstance(data, dict) else None
+    except Exception:
+        msg = None
+    return msg or  f"Java 服务返回 HTTP {resp.status_code}"
+
 
 # ============================================================
 # 2. 工具的实际执行逻辑
@@ -128,7 +142,7 @@ def build_query_order(user_id: int):
             return {"ok": False, "error": f"调用 Java 服务失败：{e}"}
 
         if resp.status_code != 200:
-            return {"ok": False, "error": f"Java 服务返回 HTTP {resp.status_code}"}
+            return {"ok": False, "error": java_error_message(resp)}
 
         data = resp.json()
 
@@ -206,7 +220,7 @@ def build_search_orders(user_id: int):
             return {"ok": False, "error": f"调用 Java 服务失败：{e}"}
 
         if resp.status_code != 200:
-            return {"ok": False, "error": f"Java 服务返回 HTTP {resp.status_code}"}
+            return {"ok": False, "error": java_error_message(resp)}
 
         orders = resp.json()
 
@@ -252,7 +266,7 @@ def build_check_eligible(user_id: int):
             return {"ok": False, "error": f"调用 Java 服务失败：{e}"}
 
         if resp.status_code != 200:
-            return {"ok": False, "error": f"Java 服务返回 HTTP {resp.status_code}"}
+            return {"ok": False, "error":java_error_message(resp)}
 
         data = resp.json()
 
@@ -310,7 +324,7 @@ def build_create_after_sale(user_id: int):
             return {"ok": False, "error": f"调用 Java 服务失败：{e}"}
 
         if resp.status_code != 200:
-            return {"ok": False, "error": f"Java 服务返回 HTTP {resp.status_code}"}
+            return {"ok": False, "error":java_error_message(resp)}
 
         data = resp.json()
 
@@ -355,7 +369,7 @@ def build_search_after_sale(user_id: int):
             return {"ok": False, "error": f"调用 Java 服务失败：{e}"}
 
         if resp.status_code != 200:
-            return {"ok": False, "error": f"Java 服务返回 HTTP {resp.status_code}"}
+            return {"ok": False, "error":java_error_message(resp)}
 
         tickets = resp.json()
 

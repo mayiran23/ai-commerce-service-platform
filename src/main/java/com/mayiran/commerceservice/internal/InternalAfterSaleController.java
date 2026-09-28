@@ -1,4 +1,4 @@
-package com.mayiran.commerceservice.controller;
+package com.mayiran.commerceservice.internal;
 
 import com.mayiran.commerceservice.dto.AfterSaleAICreateDTO;
 import com.mayiran.commerceservice.dto.AfterSaleCheckDTO;

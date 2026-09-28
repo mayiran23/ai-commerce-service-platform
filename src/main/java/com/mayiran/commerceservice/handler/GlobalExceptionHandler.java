@@ -11,7 +11,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * 全局异常处理器,处理项目中抛出的业务异常
  */
 @Slf4j
-@RestControllerAdvice
+//只接管controller包
+@RestControllerAdvice(basePackages = "com.mayiran.commerceservice.controller")
 public class GlobalExceptionHandler {
     /**
      * 捕获业务异常

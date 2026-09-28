@@ -1,4 +1,4 @@
-package com.mayiran.commerceservice.controller;
+package com.mayiran.commerceservice.internal;
 
 import com.mayiran.commerceservice.dto.SearchDTO;
 import com.mayiran.commerceservice.service.OrderService;
