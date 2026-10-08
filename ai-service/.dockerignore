@@ -1,0 +1,13 @@
+# AI 服务镜像的构建上下文排除清单
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# ⚠️ 密钥文件绝不能进镜像
+.env
+.env.example
+
+.idea/
+*.iml

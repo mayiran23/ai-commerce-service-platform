@@ -110,7 +110,48 @@ def build_query_order(user_id: int):
 AI 多轮对话里，用户很可能连说两遍"我要退货"。`create_after_sale` 按
 `orderNo + productId + type` 做幂等 —— 已存在活跃工单时直接返回原工单号，不会建出两张单。
 
-### 6. 降级不降级体验
+### 6. 多轮工具编排，不是"一问一答"
+
+早期版本只做一轮工具调用：模型决定调一次工具 → 执行 → 回答。这在单步场景下没问题，
+但"我要退那个口红"需要**搜订单 → 查退货资格 → 建工单**三步，一轮根本走不完。
+
+现在的实现是 **每轮都带 tools，循环到模型不再要求调用为止**：
+
+```python
+for _ in range(MAX_ROUNDS):
+    completion = client.chat.completions.create(model=MODEL, messages=messages, tools=TOOLS, ...)
+    if not completion.choices[0].message.tool_calls:
+        break                      # 模型不再要调工具了，收工
+    for call in completion.choices[0].message.tool_calls:
+        result = execute(call)     # 执行工具
+        messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+else:
+    # 跑满轮数还在调（模型钻牛角尖）：去掉 tools 再问最后一次，逼它输出人话
+    completion = client.chat.completions.create(model=MODEL, messages=messages, ...)
+```
+
+**踩过的坑**：最初写成固定两轮 —— 第二轮不带 `tools`。结果是三步链路走到第二步时模型无处可调，
+只能**把调用意图当纯文本吐出来**，`DSML invoke` 这种原始串直接漏进给用户的回答里。
+单步链路完全正常，所以极易漏测。
+
+**另一个收获**：工具的错误信息要写得足够具体，模型才能自我纠错。
+实测 AI 会把 `product_id` 猜错，工具返回"该订单中不存在此商品"后，
+它**自己回头调 `query_order` 查到正确值再重试**，一次成功。
+
+### 7. 多轮对话记忆
+
+Java 在**用户消息落库之前**取该会话最近 10 条 `user/assistant` 消息（倒序取完再反转），
+随请求体一起传给 Python，拼成 `[system] + history + [当前问题]`。
+
+两个设计取舍：
+
+- **历史里只带 `role` 和 `content`，不带 `tool_calls`** —— 工具调用的中间过程会迅速吃满上下文，
+  而它对新一轮对话的决策价值很低。用户关心的是"我之前说了什么"，不是"上次调了哪些工具"
+- **单条截断 500 字** —— 防止一条超长消息挤掉其他历史
+
+这样用户说"就那个订单"时，AI 能指代上下文。
+
+### 8. 降级不降级体验
 
 大模型服务挂掉是常态。AI 服务不可用时返回 `intent=FALLBACK` 的兜底话术，
 用户看到的是"客服暂时忙不过来"，而不是一个 500 错误页。
@@ -175,15 +216,125 @@ nginx
 
 浏览器打开 `http://localhost:8081`。
 
-> **本地环境备注（仅 Windows 开发机）**
-> 本机 80 和 8080 端口被其他程序占用，所以 nginx 监听 8081、Java 需要显式指定端口：
+> **本地环境备注（仅当前 Windows 开发机）**
+> 本机 8080 被 NI LabVIEW 的 `ApplicationWebServer.exe` 占用，所以本地跑 Java 时显式换端口：
 >
 > ```bash
 > ./mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--server.port=18100"
 > ```
 >
-> 此时 nginx 配置里的 `proxy_pass` 要相应改成 `http://127.0.0.1:18100`。
-> 正常环境用默认的 8080 即可。
+> 同时把 nginx 配置里的 `proxy_pass` 改成 `http://127.0.0.1:18100`。
+> 正常环境（含 Docker）用默认 8080 即可，不需要这一步。
+>
+> 把 8080 永久腾出来的做法：`services.msc` → "NI Application Web Server" → 启动类型改**手动** → 停止。
+> 该服务非系统关键，不影响其他软件。
+
+### 5. 用 Docker 一键启动（推荐）
+
+上面那套"三个终端"适合改代码时调试。想一键起全套、或者往服务器上部署，用 Docker：
+
+```bash
+# 1. 准备配置（.env 已被 .gitignore 挡住，不会提交）
+cp .env.example .env
+# 编辑 .env，填四项：
+#   MYSQL_ROOT_PASSWORD  容器里 MySQL 的 root 密码（随便设一个强密码）
+#   JWT_SECRET           随便一串长随机字符
+#   INTERNAL_TOKEN       随便一串随机字符（Java 和 Python 两边都读这一个值，天然一致）
+#   DEEPSEEK_API_KEY     你的 DeepSeek key
+
+# 2. 启动（首次会构建镜像，约 3-5 分钟）
+docker compose up -d --build
+
+# 3. 等健康检查通过后访问
+#    http://localhost:8081
+```
+
+**生成随机串**：
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+**常用命令**：
+
+```bash
+docker compose ps                     # 看四个容器的状态
+docker compose logs -f java           # 跟某个服务的日志
+docker compose stop                   # 停（数据保留）
+docker compose down                   # 停并删除容器（数据保留）
+docker compose down -v                # ⚠️ 连数据卷一起删，下次启动会重灌 sql/ 里的脚本
+```
+
+#### 架构说明
+
+四个容器组成一个内网，**只有 nginx 对外暴露端口**：
+
+| 容器 | 作用 | 端口 |
+|---|---|---|
+| `mysql` | 数据库，数据挂在 `mysql-data` 卷上 | 仅内网 3306 |
+| `java` | Spring Boot 业务服务 | 仅内网 8080 |
+| `ai` | FastAPI AI 服务 | 仅内网 8000 |
+| `nginx` | 静态页面 + `/api` 反向代理 | **宿主机 8081 → 容器 80** |
+
+`java` 和 `ai` 都不发布端口到宿主机 —— 外部访问不到，只有 nginx 能转发进来。
+
+#### 容器化时的四个关键点
+
+1. **容器之间必须用服务名互相访问，不能用 `127.0.0.1`**
+   容器里的 `127.0.0.1` 指的是容器自己。所以 `SPRING_DATASOURCE_URL` 写 `mysql:3306`、
+   `AI_SERVICE_URL` 写 `http://ai:8000`、`JAVA_BASE_URL` 写 `http://java:8080`、
+   nginx 的 `proxy_pass` 写 `http://java:8080`。
+
+2. **数据库要等 healthcheck 通过再启动上游服务**
+   `mysql` 用 `mysqladmin ping` 探活，`java` / `ai` 用端口探测。
+   `depends_on: condition: service_healthy` 把顺序串起来，否则 Java 会因为连不上库直接启动失败。
+
+3. **首次启动自动灌数据，之后不会重灌**
+   `sql/schema.sql`、`sql/seed_data.sql`、`sql/demo_seed.sql`、`sql/demo_after_sale.sql`
+   挂载到 MySQL 的 `/docker-entrypoint-initdb.d/`，**只在数据卷为空时按文件名顺序执行一次**。
+   想重新灌数据必须 `docker compose down -v`。
+
+4. **nginx 反代必须用 Docker DNS + 变量，不能写死域名**
+   这一条最容易踩，而且踩了会误判成"Java 服务挂了"：
+   nginx 对 `proxy_pass` 里**写死的域名只在启动时解析一次**，之后永久缓存 IP。
+   容器重建后 IP 会变，nginx 却还在往旧 IP 发请求 → 前端看到 502 Bad Gateway，
+   而 Java 其实活得好好的（`docker compose ps` 显示 healthy）。
+
+   ```nginx
+   resolver 127.0.0.11 valid=10s ipv6=off;   # Docker 内嵌 DNS，10 秒重新解析
+   set $java_upstream http://java:8080;      # 用变量而不是字面量
+   proxy_pass $java_upstream;
+   ```
+
+   实测：把 java 容器 IP 从 `172.18.0.5` 改成 `172.18.0.99`，**nginx 不重启，5 秒内自动恢复**。
+
+> ⚠️ **容器里灌中文数据必须写 `SET NAMES utf8mb4;`**
+> 容器环境 `LANG=C`，mysql 客户端默认按 latin1 读脚本，中文会被二次编码存成乱码，
+> **而且不会报任何错** —— 只表现为"AI 搜不到这个商品"。四个 SQL 脚本里都已包含这一行。
+
+#### 部署到服务器
+
+Docker 的价值就在这里：**同一套文件，本地和服务器完全一样**。迁到服务器只要三步：
+
+```bash
+# 1. 服务器上装 Docker（Ubuntu 为例）
+curl -fsSL https://get.docker.com | sh
+
+# 2. 把项目传上去（git clone 或 scp）
+git clone <你的仓库地址> && cd ai-commerce-service-platform
+
+# 3. 填 .env → 启动
+cp .env.example .env && vi .env
+docker compose up -d --build
+```
+
+然后到云厂商控制台的**安全组**里放行 8081 端口，浏览器访问 `http://<服务器公网IP>:8081`。
+
+**上云前必做的两件事**：
+
+- **换掉所有密钥**：`jwt.secret` 和 `internal.token` 在 Git 历史里出现过旧值，必须重新生成
+- **只放行 8081**：8080 / 8000 / 3306 不要开到公网。`/internal/*` 已经在 nginx 层 `deny all`，
+  但少开一个端口就少一分风险
 
 ### 测试账号
 
@@ -209,21 +360,32 @@ nginx
 
 ```
 ├── src/main/java/com/mayiran/commerceservice/
-│   ├── controller/      # 7 个 Controller（含 2 个内部接口）
+│   ├── controller/      # 对外接口（7 个）
+│   ├── internal/        # 内部接口，仅供 Python AI 服务调用
 │   ├── service/         # 业务逻辑；状态机校验与越权判断都在这一层
 │   ├── mapper/          # MyBatis 数据访问
 │   ├── enums/           # OrderStatus / AfterSaleStatus / EligibilityCode
+│   ├── handler/         # 两个独立的异常处理器（对外 / 内部各一个）
 │   └── ...
 ├── src/main/resources/
 │   ├── mapper/          # MyBatis XML
 │   └── application.properties.example
 ├── ai-service/          # Python AI 服务
-│   └── main.py          # SYSTEM_PROMPT + 5 个工具 + 两轮 function calling 编排
+│   ├── main.py          # SYSTEM_PROMPT + 5 个工具 + 多轮 function calling 编排
+│   ├── Dockerfile
+│   └── requirements.txt # 已锁定版本号
 ├── frontend/            # 原生 HTML + JS，零依赖零构建
 │   ├── login.html / orders.html / tickets.html / chat.html
 │   ├── assets/          # ui.js 公共组件、api.js 请求封装
-│   └── nginx.conf.example
-├── sql/                 # schema.sql 建表 + seed_data.sql 示例数据
+│   ├── nginx.conf.example    # 裸机部署用
+│   └── nginx.docker.conf     # 容器部署用（proxy_pass 指向服务名 java）
+├── sql/
+│   ├── schema.sql       # 建库建表（14 张）
+│   ├── seed_data.sql    # 基础数据（200 用户 / 200 商品 / 订单）
+│   └── demo_seed.sql    # 演示专用订单（在退货期内，用于演示退货主流程）
+│   └── demo_after_sale.sql  # 演示工单（7 个状态全覆盖），工单表不在 seed_data.sql 里
+├── Dockerfile           # Java 多阶段构建
+├── docker-compose.yml   # 四容器编排
 └── docs/API.md          # 接口契约
 ```
 
@@ -233,31 +395,61 @@ nginx
      README 里有没有演示，可信度差很多。图片放 docs/images/ 下，然后写成：
      ![对话演示](docs/images/demo-chat.gif) -->
 
-待补充演示截图。
+用 `user0001` / `123456` 登录后进入「智能客服」，按下面两幕各走一遍。
+
+### 第一幕：AI 顺畅退货（在退货期内）
+
+| 你说 | AI 会做什么 |
+|---|---|
+| 我买的四件套洗了一次就严重掉色，能退吗 | 调 `search_user_orders` 找到订单 → 调 `check_refund_eligible` 查资格 |
+| （它会回答）这件商品还在 7 天无理由退货期内，截止 <签收日 + 7 天>，需要我帮您提交吗？ | —— |
+| 确认，帮我提交 | 调 `create_after_sale` 建单，工单进入 `PENDING` |
+
+**这一轮的看点是**：你没有给它订单号，它自己搜出来的；退货资格是 Java 判的，不是它猜的。
+
+### 第二幕：超出边界时转人工（已超期）
+
+| 你说 | AI 会做什么 |
+|---|---|
+| 我买的口红到货时膏体就是断的，能退吗 | `check_refund_eligible` 返回 `eligible=false` 但 `suggestManualReview=true` |
+| （它会回答）已超过 7 天无理由期，但这是质量问题，我帮您提交人工审核 | 调 `create_after_sale`，工单进入 `MANUAL_REVIEW` |
+
+**这一轮的看点是**：AI 没有硬邦邦回一句"不能退"，而是**转成人工审核**。
+
+### 第三幕：AI 的能力边界（问政策题）
+
+| 你说 | 现在的回答 |
+|---|---|
+| 七天无理由到底怎么算的？ | 依赖模型自身知识，**没有权威出处** —— 这正是下一步要接 RAG 解决的问题 |
+
+> ✅ 演示数据的退货截止日是**相对今天动态计算**的（签收 = 今天往前 2 天，退货截止 = 签收 + 7 天），
+> 所以无论哪天执行 `sql/demo_seed.sql`，"第一幕"都能演。
+> 最初写成固定日期（2026-10-02），结果过了那天演示就失效了 —— 已修正。
 
 ## 已知限制
 
-- **单轮工具编排**：目前只做"模型决定调工具 → 执行 → 组织回答"这一轮，不做多步链式调用
-- **无多轮记忆**：每次请求不携带历史消息，用户说"就那个订单"时 AI 无法指代上下文
+以下都是**明确知道、主动取舍**的边界，不是没做完的部分。
+
 - **无服务端会话**：登录态是纯 JWT（没有 Redis、没有会话表），因此**不支持"踢人下线"、也无法限制同一账号多端登录**。
   要做到需引入 token 版本号（`t_user.token_version`，登录时自增、拦截器比对）或服务端会话存储。
-  这是无状态方案换取"服务端零存储 + 天然支持水平扩展"的代价
+  这是无状态方案换取"服务端零存储 + 天然支持水平扩展"的代价 —— 选它的理由和代价都清楚
 - **前端页面守卫不是安全边界**：`orders.html` / `tickets.html` / `chat.html` 通过 `UI.requireLogin()`
   检查 localStorage 中的 token 决定是否跳转，这层只能防止"未登录误入页面"。
-  真正的拦截在服务端 `LoginInterceptor`——不带 `Authorization` 请求任何 `/api/**` 都返回 401
-- **未接入 RAG**：政策类问答（如"七天无理由怎么算"）目前依赖模型自身知识，没有接知识库
+  真正的拦截在服务端 `LoginInterceptor` —— 不带 `Authorization` 请求任何 `/api/**` 都返回 401。
+  两层职责分开：前端管体验，后端管安全
 - **置信度是启发式信号**：`ai_confidence` 是模型的自评分而非校准过的概率，
-  只用 0.7 阈值做粗粒度分流
-- **内部接口的异常返回体不统一**：`/internal/*` 抛异常时会被全局异常处理器包成
-  `Result` 结构，与"内部接口用 HTTP 状态码表达错误"的设计目标不一致，待重构
-- **对话记录的 `confidence` 字段是占位值**：`t_chat_message.confidence` 目前写入固定值，
-  真正的模型置信度只存在于建单场景（`t_after_sale.ai_confidence`）
+  只用 0.7 阈值做粗粒度分流。要真正可用需积累标注数据做校准
+- **未接入 RAG**：政策类问答（如"七天无理由怎么算"）目前依赖模型自身知识，没有接知识库。
+  这是当前最明确的下一步（见"后续规划"）
+- **本地开发机的端口特例**：开发机 8080 被 NI LabVIEW 的 `ApplicationWebServer.exe` 占用，
+  本地运行时 Java 走 18100；Docker 形态下不受影响（容器内固定 8080，只对外暴露 8081）
 
 ## 后续规划
 
-- [ ] 多轮对话记忆（会话级上下文）
-- [ ] 政策知识库 RAG
-- [ ] 离线评估：用标注好的问答集跑批，量化对比提示词与工具描述迭代前后的效果
+- [ ] **政策知识库 RAG**：构建 15-20 篇平台政策语料 → Chroma 向量库 → 检索增强，
+      让 AI 能回答"七天无理由怎么算""运费谁承担"这类没有工具可调的规则题
+- [ ] **离线评估**：用标注好的问答集跑批，量化对比"无 RAG / 有 RAG / 有 RAG+重排"三组效果
+- [ ] 多轮对话记忆的长期化（当前是会话内最近 10 条，没有摘要压缩，长对话会丢早期上下文）
 
 ---
 

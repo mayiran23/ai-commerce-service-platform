@@ -2,6 +2,10 @@ CREATE DATABASE IF NOT EXISTS commerce_service
   DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE commerce_service;
 
+-- ⚠️ 必须有：容器里 mysql 客户端默认按 latin1 读脚本，
+-- 不写这行建表时的中文注释会存成乱码。
+SET NAMES utf8mb4;
+
 -- ============ 用户与权限 ============
 CREATE TABLE t_user (
   id           BIGINT PRIMARY KEY AUTO_INCREMENT,

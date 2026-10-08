@@ -28,13 +28,16 @@ public class StatsServiceImpl implements StatsService {
         if (!canSeeAll) {
             userId = UserContext.getUserId();
         }
-        List<Map<String,Long>> rows = orderMapper.countByStatus(userId);
+        List<Map<String,Object>> rows = orderMapper.countByStatus(userId);
         Map<String,Long> byStatus=new LinkedHashMap<>();
         long total=0L;
         //遍历map集合
-        for (Map<String,Long> row : rows) {
+        for (Map<String,Object> row : rows) {
+            // 防御性处理：正常 GROUP BY 出来的 n 不会是 null，
+            // 但万一数据异常，宁可显示 0 也不要因为拆箱炸掉整个统计接口
             String status= String.valueOf(row.get("status"));
-            Long n=row.get("n");
+            Number raw = (Number) row.get("n");
+            Long n = raw == null ? 0L : raw.longValue();
 
             byStatus.put(status,n);
             total+=n;

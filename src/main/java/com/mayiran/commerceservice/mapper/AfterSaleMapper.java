@@ -17,7 +17,11 @@ import java.util.Map;
 public interface AfterSaleMapper {
     Page<AfterSaleVO> pageAfterSales(AfterSalePageDTO afterSalePageDTO);
 
-    List<Map<String, Long>> countByStatus(@Param("userId") Long userId);
+    /**
+     * 按工单状态分组统计数量。
+     * ⚠️ 泛型值是 Object：Map 里 status 是 String、n 是 Long，别写成 Map<String,Long>（假的类型安全）。
+     */
+    List<Map<String, Object>> countByStatus(@Param("userId") Long userId);
 
     AfterSaleVO getByTicketNo(String ticketNo);
 

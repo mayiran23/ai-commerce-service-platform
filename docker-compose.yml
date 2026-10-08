@@ -1,0 +1,146 @@
+# ============================================================
+#  电商订单智能客服 —— 一键启动全部服务
+# ============================================================
+#  启动：docker compose up -d --build        然后浏览器打开 http://localhost:8081
+#  看日志：docker compose logs -f java
+#  停止：docker compose stop
+#  停止并删除容器（数据还在）：docker compose down
+#  ⚠️ 连数据库一起清空重来：docker compose down -v
+#     （-v 会删掉 mysql-data 卷，下次启动会重新灌一遍 sql/ 里的脚本）
+#
+#  ⚠️ 密钥统一放在项目根目录的 .env 文件里（已被 .gitignore 挡住，不会提交）。
+#     照着 .env.example 填。
+# ============================================================
+name: commerce-service
+
+services:
+  # ==========================================================
+  #  1. MySQL —— 唯一有"状态"的服务，数据挂在卷上
+  # ==========================================================
+  mysql:
+    image: mysql:8.0
+    container_name: commerce-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-commerce_service}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    volumes:
+      # 数据卷：容器删了数据还在
+      - mysql-data:/var/lib/mysql
+      # 首次启动（数据卷为空）时按文件名顺序自动执行这四个脚本
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/seed_data.sql:/docker-entrypoint-initdb.d/02-seed_data.sql:ro
+      - ./sql/demo_seed.sql:/docker-entrypoint-initdb.d/03-demo_seed.sql:ro
+      # 工单表不在 seed_data.sql 里，必须单独灌，否则「客服审批流转」演示不了
+      - ./sql/demo_after_sale.sql:/docker-entrypoint-initdb.d/04-demo_after_sale.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    # 想用 DataGrip 连容器里的库时，把下面两行取消注释（只绑本机，不对外）
+    # ports:
+    #   - "127.0.0.1:3307:3306"
+    networks:
+      - commerce-net
+
+  # ==========================================================
+  #  2. Java 业务服务 —— 只对内，不发布端口到宿主机
+  # ==========================================================
+  java:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: commerce-service/java:local
+    container_name: commerce-java
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      # 数据库地址写的是服务名 mysql，不是 127.0.0.1
+      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-commerce_service}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      # AI 服务地址同样是服务名
+      AI_SERVICE_URL: http://ai:8000
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      # temurin 镜像里没有 curl，用 bash 自带的 /dev/tcp 探一下端口通不通
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    networks:
+      - commerce-net
+
+  # ==========================================================
+  #  3. Python AI 服务 —— 只对内，不发布端口到宿主机
+  # ==========================================================
+  ai:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    image: commerce-service/ai:local
+    container_name: commerce-ai
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      # 调 Java 内部接口，地址是服务名 java
+      JAVA_BASE_URL: http://java:8080
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+    depends_on:
+      java:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/docs')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - commerce-net
+
+  # ==========================================================
+  #  4. nginx —— 唯一对外的入口，宿主机 8081 → 容器 80
+  # ==========================================================
+  nginx:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.nginx
+    image: commerce-service/nginx:local
+    container_name: commerce-nginx
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      java:
+        condition: service_healthy
+      # 为什么要等 ai？
+      #   nginx 是入口，java 一"端口可连"就健康了，但此时 Python 那边
+      #   uvicorn 可能还没把应用加载完。结果就是：docker compose up -d 刚敲完
+      #   你就去提问，AI 请求会一直挂着直到 java 侧 20 秒读超时，返回"客服繁忙"。
+      #   等 ai 健康再起 nginx，up -d 返回时就代表"真的可以用了"。
+      ai:
+        condition: service_healthy
+    networks:
+      - commerce-net
+
+volumes:
+  mysql-data:
+
+networks:
+  commerce-net:
+    driver: bridge

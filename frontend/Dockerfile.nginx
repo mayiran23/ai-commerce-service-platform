@@ -1,0 +1,27 @@
+# ============================================================
+#  nginx 容器镜像：静态页面 + 反向代理
+# ============================================================
+#  构建上下文是这个 frontend/ 目录（不是项目根目录），
+#  所以 docker-compose.yml 里写的是 context: ./frontend
+#
+#  单独构建：
+#    docker build -f Dockerfile.nginx -t commerce-service/nginx:local .
+# ============================================================
+FROM nginx:1.27-alpine
+
+# 页面用相对路径 /api/... 发请求，前后端同源，不需要配 CORS
+COPY login.html   /usr/share/nginx/html/
+COPY orders.html  /usr/share/nginx/html/
+COPY chat.html    /usr/share/nginx/html/
+COPY tickets.html /usr/share/nginx/html/
+COPY assets/      /usr/share/nginx/html/assets/
+
+# 容器版配置（把 default.conf 整个换掉）
+COPY nginx.docker.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+# 这里故意不写 RUN nginx -t 做校验：
+# 配置里 proxy_pass 指向的 java 是 Docker 网络里的服务名，
+# 构建镜像的时候这个容器还不存在，校验会直接失败。
+# 真正启动时如果配置有问题，docker compose logs nginx 一眼就能看到。

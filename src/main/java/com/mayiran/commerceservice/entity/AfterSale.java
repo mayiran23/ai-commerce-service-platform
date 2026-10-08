@@ -18,9 +18,13 @@ public class AfterSale implements Serializable {
     //工单号
     private String ticketNo;
     //订单号
-    private String OrderNo;
+    // ⚠️ 必须小写开头。曾经写成 OrderNo，实测 MyBatis 的属性查找不区分大小写、
+    //    所以"恰好"能跑通；但这违反 JavaBean 规范，而且一旦有人打开 Jackson 的
+    //    字段可见性（或换成按字段名反射的框架），映射会立刻静默失效。
+    //    改名后 Lombok 生成的 getOrderNo()/setOrderNo() 名字一字不变，调用方无需改动。
+    private String orderNo;
     //订单中商品的Id
-    private Long OrderItemId;
+    private Long orderItemId;
     //用户id
     private Long userId;
     //工单类型

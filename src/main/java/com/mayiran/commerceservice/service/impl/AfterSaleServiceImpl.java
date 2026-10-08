@@ -79,18 +79,19 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         }
 
         //查状态统计
-        List<Map<String,Long>> rows = afterSaleMapper.countByStatus(canSeeAll?null:UserContext.getUserId());
+        List<Map<String,Object>> rows = afterSaleMapper.countByStatus(canSeeAll?null:UserContext.getUserId());
         //先将7个状态全摆成0,再用SQL结果覆盖
         Map<String,Long> stats =new LinkedHashMap<>();
         for (AfterSaleStatus s : AfterSaleStatus.values()){
             stats.put(s.name(),0L);
         }
 
-        for(Map<String,Long> row : rows){
+        for(Map<String,Object> row : rows){
             //设置状态
             String status= String.valueOf(row.get("status"));
-            //设置状态对应的工单数
-            Long n=row.get("n");
+            //设置状态对应的工单数（COUNT 回来的是 Number，显式转换，别指望泛型帮你）
+            Number raw = (Number) row.get("n");
+            Long n = raw == null ? 0L : raw.longValue();
             stats.put(status,n);
         }
 

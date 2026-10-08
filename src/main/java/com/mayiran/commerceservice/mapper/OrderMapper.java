@@ -33,7 +33,16 @@ public interface OrderMapper {
     List<OrderItem> getItemsByOrderNos(@Param("orderNos") List<String> orderNos);
 
     //统计各状态的数量
-    List<Map<String, Long>> countByStatus(@Param("userId") Long userId);
+    /**
+     * 按订单状态分组统计数量。
+     *
+     * ⚠️ 泛型值是 Object 而不是 Long：这个 Map 里混着两种类型 ——
+     *    status 是 String，n 是 COUNT(*) 的 Long。
+     *    写成 Map<String,Long> 能通过编译（类型擦除），但那是假的类型安全：
+     *    谁哪天写一句 Long s = row.get("status") 就会在运行期炸 ClassCastException。
+     *    如实写 Object，取出来自己做转换，才是诚实的做法。
+     */
+    List<Map<String, Object>> countByStatus(@Param("userId") Long userId);
 
     List<OrderVO> searchForInternal(SearchDTO searchDTO);
 }

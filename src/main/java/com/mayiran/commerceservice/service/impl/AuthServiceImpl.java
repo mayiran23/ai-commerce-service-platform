@@ -71,13 +71,18 @@ public class AuthServiceImpl implements AuthService {
             throw new AccountLockedException(MessageConstant.ACCOUNT_LOCKED);
         }
 
+        // ⚠️ role 要返回【规范化后的大写代号】。
+        // 前端 ui.js 用 roles.includes(user.role) 控制菜单显示（如 ['AGENT','ADMIN'] 才显示"售后工单"），
+        // 返回数据库原始值（可能小写/带空格）会导致客服看不到该菜单。
+        RoleEnum roleEnum = RoleEnum.of(user.getRole());
+
         return UserVO.builder()
                 .id(user.getId())
                 .username(user.getUsername())
                 .nickname(user.getNickname())
                 .phone(user.getPhone())
-                .role(user.getRole())
-                .roleText(RoleEnum.of(user.getRole()).getText())
+                .role(roleEnum.name())
+                .roleText(roleEnum.getText())
                 .build();
     }
 }
