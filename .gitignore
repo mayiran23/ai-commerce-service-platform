@@ -34,5 +34,10 @@ __pycache__/
 # Maven 构建产物
 target/
 
+# RAG 向量库（由知识库语料生成，体积大且可重建，不入库）
+ai-service/chroma_db/
+ai-service/.chroma/
+*.sqlite3
+
 # 本地配置（含数据库密码，绝对不提交）
 src/main/resources/application.properties
