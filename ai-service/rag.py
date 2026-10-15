@@ -27,7 +27,7 @@ os.environ.setdefault("no_proxy","127.0.0.1,localhost")
 embed_client1=OpenAI(api_key=DASHSCOPE_API_KEY,base_url=DASHSCOPE_BASE_URL)
 #向量库句柄，第一次真用到的时候才打开
 _collection=None
-
+DEFAULT_STRATEGY=os.getenv("RAG_STRATEGY","vector")
 def get_collection():
     """懒加载向量库"""
     global _collection
@@ -38,7 +38,7 @@ def get_collection():
         _collection=client.get_collection(COLLECTION_NAME)
     return _collection
 
-def search_policy(query: str,top_k: int = 3)->list[dict]:
+def vector_search(query: str,top_k: int = 3)->list[dict]:
     """
     检索政策知识库，返回最相关的top-k块
 
@@ -86,7 +86,39 @@ def search_policy(query: str,top_k: int = 3)->list[dict]:
             "similarity": round(1-dist,3)
         })
     return hits
+# ============================================================
+# 对外入口：按 strategy 分发
+# —— 上层（main.py 的工具、评估脚本）只认这一个函数
+# ============================================================
+def search_policy(query: str, top_k: int = 3, strategy: str | None = None) -> list[dict]:
+    """
+    检索政策知识库，返回最相关的 top_k 块。
 
+    strategy 可选值：
+      None / "vector"  → 纯向量检索（当前唯一实现）
+      以后扩展："hybrid"（向量+BM25 融合）、"hybrid_rerank"（再精排）
+
+    返回格式：
+    [{
+      "text": "2. 期限的计算方式...",
+      "doc_title": "七天无理由退货规则",
+      "section": "2. 期限的计算方式",
+      "similarity": 0.87
+    }, ...]
+    """
+    # 不指定就用默认策略
+    strategy = strategy or DEFAULT_STRATEGY
+
+    if strategy == "vector":
+        return vector_search(query, top_k)
+
+    # 以后加新策略就在这里加分支：
+    # if strategy == "hybrid":
+    #     return hybrid_search(query, top_k)
+    # if strategy == "hybrid_rerank":
+    #     return rerank(hybrid_search(query, RECALL_K), query, top_k)
+
+    raise ValueError(f"未知的检索策略：{strategy}")
 if __name__=="__main__":
     for q in ["七天无理由怎么算", "退货运费谁承担", "发票怎么开"]:
         print(f"\n=== {q} ===")
