@@ -41,7 +41,7 @@ SKIP_FILES={"README.md","_template.md"}  #不是政策语料，跳过
 #走本机时不要被系统代理拦掉
 os.environ.setdefault("NO_PROXY","127.0.0.1,localhost")
 os.environ.setdefault("no_proxy","127.0.0.1,localhost")
-#没读到key就提前停，别等到调用的时侯才报错
+#没读到key就提前停，别等到调用的时候才报错
 if not DASHSCOPE_API_KEY:
     raise SystemExit("没读到DASHSCOPE_API_KEY")
 embed_client=OpenAI(api_key=DASHSCOPE_API_KEY,base_url=DASHSCOPE_BASE_URL)

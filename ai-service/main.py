@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from openai import OpenAI
 from pydantic import BaseModel
+import rag
 
 # ============================================================
 # 1. 读取配置
@@ -53,12 +54,18 @@ SYSTEM_PROMPT = (
     "④ check_refund_eligible：查某个订单里的某个商品现在还能不能退货。"
     "操作类（会写数据，必须谨慎）："
     "⑤ create_after_sale：创建售后工单。"
+    "⑥ search_refund_policy：检索平台的政策知识库，回答「规定是什么」类问题。"
+
 
     "【怎么选工具】"
     "用户给了具体订单号 → query_order；"
     "用户没给订单号、只是在问自己的订单情况（比如「我最近买了什么」）→ search_user_orders，"
     "不要反过来找用户要订单号，更不要瞎猜订单号。"
     "用户问售后进度 → search_after_sale。"
+    "用户问平台的规则、政策、流程（「七天无理由怎么算」「运费谁出」「发票怎么开」）"
+    "→ search_refund_policy。"
+
+
 
     "【申请退货的固定流程，必须按顺序走】"
     "第一步：先拿到订单号和商品ID。有订单号就用 query_order，"
@@ -83,6 +90,12 @@ SYSTEM_PROMPT = (
     "用户说得很清楚、诉求明确 → 给 0.85 以上；"
     "用户表述含糊、你只能猜他意思 → 给 0.5 以下。"
     "不要一律给高分，这个数值会决定工单是自动通过还是转人工。"
+    
+        "【政策类问题怎么答】"
+    "必须先用 search_refund_policy 检索，再严格依据检索到的原文回答。"
+    "不要凭自己的常识编政策 —— 你记忆里其他平台的规则，和本平台可能不一样。"
+    "回答结尾必须注明出处，格式：（依据：《文档标题》· 小节标题）"
+    "如果检索结果里没有相关内容，就如实说「这条我在平台规则里没有查到」，不要硬答。"
 
     "工具查不到数据时如实告知用户，不要编造。"
     "【怎么理解用户的话】"
@@ -406,7 +419,48 @@ def build_search_after_sale(user_id: int):
         }
 
     return search_after_sale
+def build_search_refund_policy():
+    """
+    工厂函数: 检索平台政策知识库(RAG)
+    """
+    def search_refund_policy(query: str)-> dict:
+        """检索政策原文,返回最相关得3段和它们得出处"""
+        try:
+            hits=rag.search_policy(query,top_k=3)
+        except Exception as e:
+            #向量库没建、key没配等都在这里兜住
+            #避免整个对话因为政策检索挂掉
+            return {"ok": False, "error": f"政策知识库暂时不可用：{e}"}
 
+        if not hits:
+            return {
+                "ok": True,
+                "found": False,
+                "message": "知识库里没有检索到相关条款",
+                # ⚠️ 这个 summary 是给前端看的简短描述。
+                #    不提供的话，主流程里那句兜底文案会把政策检索显示成
+                #    「查到订单」—— 明明查的是政策，界面却写查订单，会误导人。
+                "summary": "没有检索到相关条款",
+            }
+        return {
+            "ok": True,
+            "found": True,
+            "count": len(hits),
+            # 同上：必须有 summary，否则前端会显示「查到订单」
+            "summary": f"检索到 {len(hits)} 段相关政策",
+            "results": [
+                {
+                    #原文——让模型照着这段说
+                    "content": h["text"],
+                    #出处——让模型说清”出自哪篇哪节“
+                    "source": f"《{h['doc_title']}》· {h['section']}",
+                }
+                for h in hits
+            ],
+            #提示语会跟着工具结果一起回到模型跟前，是“就近提醒”
+            "note": "回答时请依据以上原文，并注明出处。",
+        }
+    return search_refund_policy
 
 # ============================================================
 # 3. 工具说明书（给模型看的，不是给程序看的）
@@ -583,6 +637,32 @@ TOOLS = [
                 "required": ["order_no", "product_id", "ticket_type", "reason", "ai_confidence"],
             },
         },
+    },{
+        "type": "function",
+        "function": {
+            "name": "search_refund_policy",
+            "description": (
+                "检索平台的政策规定原文，用来回答「规定是什么」这一类问题，"
+                "比如「七天无理由怎么算」「退货运费谁承担」「发票怎么开」"
+                "「拆开包装算不算使用」「退款多久到账」。"
+                "它返回政策原文片段和出处，不涉及任何具体订单。"
+                "⚠️ 如果用户问的是「我这一单/我这个商品」能不能怎么样，"
+                "那是关于他自己的订单，请改用 check_refund_eligible。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "要检索的政策问题.用用户的原话即可;"
+                            "如果用户说得很省略,可以改写成一句完成得问句."
+                        ),
+                    },
+                },
+                "required": ["query"],
+            },
+        },
     }
 
 ]
@@ -637,6 +717,8 @@ def intent_of(used_tools: list) -> str:
         return "AFTER_SALE_CREATE"
     if "check_refund_eligible" in names or "search_after_sale" in names:
         return "AFTER_SALE_QUERY"
+    if "search_refund_policy" in names:
+        return "POLICY_QA"
     if names:
         return "ORDER_QUERY"
     return "CHAT"
@@ -664,6 +746,7 @@ def chat(req: ChatRequest):
         "search_after_sale": build_search_after_sale(req.userId),
         "check_refund_eligible": build_check_eligible(req.userId),
         "create_after_sale": build_create_after_sale(req.userId),
+        "search_refund_policy": build_search_refund_policy(),
     }
     used_tools = []
 

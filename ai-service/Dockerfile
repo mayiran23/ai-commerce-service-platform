@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir \
         --trusted-host pypi.tuna.tsinghua.edu.cn \
         -r requirements.txt
 
-COPY main.py .
+COPY main.py rag.py ./
 
 EXPOSE 8000
 
