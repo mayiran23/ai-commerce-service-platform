@@ -7,3 +7,5 @@ pydantic==2.13.5
 
 #--------RAG-------
 chromadb==1.0.15
+rank-bm25==0.2.2
+jieba==0.42.1
