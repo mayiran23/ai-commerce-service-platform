@@ -27,7 +27,9 @@ RUN pip install --no-cache-dir \
         --trusted-host pypi.tuna.tsinghua.edu.cn \
         -r requirements.txt
 
-COPY main.py rag.py ./
+# 提示词和工具定义已拆成独立文件，必须一起 COPY 进去
+# （漏了会报 ModuleNotFoundError: No module named 'prompts'）
+COPY main.py rag.py prompts.py tool_specs.py ./
 
 EXPOSE 8000
 
