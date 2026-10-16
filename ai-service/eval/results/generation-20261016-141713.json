@@ -1,0 +1,42 @@
+{
+  "layer": "generation",
+  "time": "20261016-141713",
+  "elapsed_sec": 6.6,
+  "judge_model": "qwen-plus",
+  "overall": {
+    "accuracy": 5.0,
+    "completeness": 5.0,
+    "relevance": 5.0,
+    "safety": 5.0
+  },
+  "by_type": {
+    "normal": {
+      "accuracy": 5.0,
+      "completeness": 5.0,
+      "relevance": 5.0,
+      "safety": 5.0,
+      "n": 1
+    }
+  },
+  "rows": [
+    {
+      "id": "N001",
+      "type": "normal",
+      "question": "七天无理由的七天是怎么算的？",
+      "answer": "七天无理由的七天是这么算的：\n\n- **从签收那天开始算**，往后数 7 个自然日。比如 3 月 1 日签收，截止就是 3 月 7 日当天结束。\n- 起算点是**签收日**，不是下单日也不是发货日，运输途中的时间不算在内。\n- 按**自然日**算，周末和法定节假日都包含在内，不顺延。就算第七天正好是节假日，也得在当天结束前提交申请。\n- 一个订单里有多件商品的话，**每件商品各按自己的签收时间算**，截止时间可能不一样。\n\n另外提醒一句：超过七天也不是完全不能退，只是不再适用无理由规则，会转人工审核，还是可以试试的。\n\n（依据：《七天无理由退货规则》· 2. 期限的计算方式 / 3. 超过期限的处理）",
+      "intent": "POLICY_QA",
+      "tools": [
+        "search_refund_policy"
+      ],
+      "latency_ms": 4889,
+      "retrieved": true,
+      "score": {
+        "accuracy": 5,
+        "completeness": 5,
+        "relevance": 5,
+        "safety": 5,
+        "reason": "OK"
+      }
+    }
+  ]
+}
