@@ -41,3 +41,7 @@ ai-service/.chroma/
 
 # 本地配置（含数据库密码，绝对不提交）
 src/main/resources/application.properties
+
+# AI 助手工作目录（含记忆/临时文件，绝不提交）
+.workbuddy/
+.claude/
