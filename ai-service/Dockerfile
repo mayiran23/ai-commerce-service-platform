@@ -31,8 +31,14 @@ RUN pip install --no-cache-dir \
 # （漏了会报 ModuleNotFoundError: No module named 'prompts'）
 COPY main.py rag.py prompts.py tool_specs.py ./
 
+# RAG：语料与建库脚本（镜像里不含向量库，容器启动时自动构建）
+COPY ingest.py ./
+COPY knowledge/ ./knowledge/
+
 EXPOSE 8000
 
+# 启动时先建向量库（38 条语料，约 10 秒）；建库失败不阻塞启动 ——
+# 查订单/建工单等基础功能不受影响，只有政策检索会降级。
 # --host 0.0.0.0 必须写！默认是 127.0.0.1，那只允许"容器自己"访问，
 # 同一个 Docker 网络里的 java 容器就调不进来了。
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "python ingest.py --reset || echo '[RAG] 向量库构建失败，政策检索暂不可用'; exec python -m uvicorn main:app --host 0.0.0.0 --port 8000"]
