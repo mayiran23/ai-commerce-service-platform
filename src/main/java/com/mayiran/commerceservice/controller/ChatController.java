@@ -11,7 +11,9 @@ import com.mayiran.commerceservice.vo.ChatSessionVO;
 import com.mayiran.commerceservice.vo.ChatSessionIdVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -35,6 +37,23 @@ public class ChatController {
         log.info("收到对话请求userId:{},sessionId:{}",userId,chatSendDTO.getSessionId());
 
         return Result.success(chatService.chat(userId, chatSendDTO));
+    }
+
+    /**
+     * 流式对话（SSE）。
+     *
+     * 返回的不是 JSON 而是一条 text/event-stream 长连接，前端要边读边渲染。
+     *
+     * ⚠️ 这里必须在**当前线程**把 userId 取出来再传下去。
+     *    UserContext 底层是 ThreadLocal，方法内部会切到线程池执行，
+     *    切过去之后 getUserId() 就是 null 了 —— 这是 SSE 最容易踩的坑，
+     *    而且症状很隐蔽：日志里只会看到"查不到订单"，看不出是 userId 丢了。
+     */
+    @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter chatStream(@RequestBody ChatSendDTO chatSendDTO) {
+        Long userId = UserContext.getUserId();
+        log.info("收到流式对话请求userId:{},sessionId:{}", userId, chatSendDTO.getSessionId());
+        return chatService.chatStream(userId, chatSendDTO);
     }
 
     /**

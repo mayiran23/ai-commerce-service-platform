@@ -13,15 +13,28 @@ import com.mayiran.commerceservice.service.ChatService;
 import com.mayiran.commerceservice.vo.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -39,6 +52,52 @@ public class ChatServiceImpl implements ChatService {
     private static final int HISTORY_LIMIT=10;
     //单条历史消息最多回传500字
     private static final int HISTORY_ITEM_MAX=500;
+
+    // ---------- 流式对话专用 ----------
+    // Python AI 服务的地址，从 application.properties 的 ai.service.url 读
+    @Value("${ai.service.url}")
+    private String aiServiceUrl;
+
+    /**
+     * 流式对话线程池。
+     *
+     * 为什么要单独开池子，不复用 Tomcat 的请求线程：
+     *   流式请求会一直挂着（一条回答要 3~8 秒），如果用 Tomcat 线程，
+     *   并发几个用户就能把 200 个工作线程占满，整个服务会被拖死。
+     *   单独池子最多 8 个并发流，超出的排队，把风险限制在聊天功能内部。
+     *
+     * 用守护线程：服务关闭时不会因为还有流没跑完而卡住。
+     */
+    private static final ExecutorService STREAM_POOL =
+            Executors.newFixedThreadPool(8, r -> {
+                Thread t = new Thread(r, "chat-stream");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /**
+     * 调 Python 流式接口用的 JDK 原生 HttpClient。
+     *
+     * 为什么不用项目里那个 RestClient：
+     *   RestClient 是**同步**客户端，它会把响应体整个读完才返回，
+     *   用它接 SSE 等于把流式彻底废掉（会等到最后一个字才一起收到）。
+     *   而 JDK 11+ 自带的 HttpClient 支持 BodyHandlers.ofInputStream()，
+     *   能拿到"还没结束"的流边走边读，且不用引任何新依赖。
+     */
+    private static final java.net.http.HttpClient STREAM_HTTP =
+            java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(5))
+                    // 🔴 必须强制 HTTP/1.1，否则请求体在传输中丢失。
+                    //
+                    // JDK HttpClient 默认优先 HTTP/2，对 http:// 地址会先发一个
+                    // `Upgrade: h2c` 请求尝试升级协议。而 uvicorn 不支持明文 HTTP/2，
+                    // 升级握手处理不一致，结果 POST 的 body 直接丢了 ——
+                    // FastAPI 报 `422 {"loc":["body"],"msg":"Field required","input":null}`，
+                    // 看起来像"没传参数"，其实是协议层把参数吃了。
+                    // uvicorn 日志里那两行 `Unsupported upgrade request` /
+                    // `Invalid HTTP request received` 就是铁证。
+                    .version(java.net.http.HttpClient.Version.HTTP_1_1)
+                    .build();
 
     @Override
     public ChatReplyVO chat(Long userId, ChatSendDTO chatSendDTO) {
@@ -105,6 +164,187 @@ public class ChatServiceImpl implements ChatService {
 
         reply.setSessionId(sessionId);
         return reply;
+    }
+
+    // ==========================================================
+    //  流式对话
+    // ==========================================================
+
+    @Override
+    public SseEmitter chatStream(Long userId, ChatSendDTO chatSendDTO) {
+        // 超时给 180 秒：大模型 + 工具链最慢也就十几秒，
+        // 但用户网络差时读写会很慢，留足余量。到点 Spring 会自动关掉连接。
+        SseEmitter emitter = new SseEmitter(180_000L);
+
+        // ⚠️ userId 是**参数**，不是在这里再调 UserContext.getUserId()。
+        //    这个方法返回后请求线程就释放了，下面线程池里的代码
+        //    根本看不到 ThreadLocal 里的东西。
+        STREAM_POOL.execute(() -> {
+            try {
+                doChatStream(userId, chatSendDTO, emitter);
+            } catch (ChatSessionNotFoundException e) {
+                // 会话不存在/越权：这是能明确告诉用户的原因
+                sendQuietly(emitter, Map.of("type", "error", "message", e.getMessage()));
+                emitter.complete();
+            } catch (Exception e) {
+                log.error("流式对话失败,userId:{}", userId, e);
+                sendQuietly(emitter, Map.of("type", "error", "message", "客服繁忙，请稍后再试"));
+                emitter.complete();
+            }
+        });
+        return emitter;
+    }
+
+    private void doChatStream(Long userId, ChatSendDTO dto, SseEmitter emitter) throws Exception {
+        // ---------- 1. 会话校验 / 新建（和同步版完全一致） ----------
+        String sessionId = dto.getSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            sessionId = createSession(userId);
+        } else {
+            ChatSession session = chatSessionMapper.getBySessionId(sessionId);
+            if (session == null || !session.getUserId().equals(userId)) {
+                throw new ChatSessionNotFoundException(MessageConstant.SESSION_NOT_FOUND);
+            }
+        }
+
+        // ---------- 2. 取多轮上下文 ----------
+        List<Map<String, String>> history = loadHistory(sessionId);
+
+        // ---------- 3. 用户这句话先落库 ----------
+        chatMessageMapper.insert(ChatMessage.builder()
+                .sessionId(sessionId)
+                .role("user")
+                .content(dto.getMessage())
+                .createTime(LocalDateTime.now())
+                .build());
+
+        // ---------- 4. 先把 sessionId 推给前端 ----------
+        // 新建会话时，前端必须立刻拿到 sessionId，否则这一轮的回复
+        // 和下一条提问会被当成两个不同的会话。
+        final String sid = sessionId;
+
+        // ---------- 5. 请求 Python 的 /chat/stream ----------
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", userId);
+        body.put("sessionId", sessionId);
+        body.put("message", dto.getMessage());
+        body.put("history", history);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(aiServiceUrl + "/chat/stream"))
+                .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream")
+                .timeout(Duration.ofSeconds(120))
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
+                .build();
+
+        Map<String, Object> doneEvent = null;
+        long started = System.currentTimeMillis();
+
+        HttpResponse<InputStream> response =
+                STREAM_HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
+
+        if (response.statusCode() != 200) {
+            // 把 Python 返回的错误详情打出来：FastAPI 的 422 会明确告诉你是哪个字段
+            String errBody = "";
+            try {
+                errBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+            } catch (Exception ignore) {
+            }
+            log.error("AI 流式接口返回异常状态码:{}, 请求体:{}, 错误详情:{}",
+                    response.statusCode(), objectMapper.writeValueAsString(body), errBody);
+            sendQuietly(emitter, Map.of("type", "error", "message", "客服繁忙，请稍后再试"));
+            emitter.complete();
+            return;
+        }
+
+        // ---------- 6. 边读边转发 ----------
+        // try-with-resources 保证异常时也会关掉底层连接，不然 AI 那边
+        // 会一直挂着一个没人读的响应，连接池迟早耗尽。
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // SSE 帧里只认以 "data:" 开头的行，空行是帧分隔符，跳过即可
+                if (!line.startsWith("data:")) {
+                    continue;
+                }
+                String data = line.substring(5).trim();
+                if (data.isEmpty()) {
+                    continue;
+                }
+
+                // 原样转发给浏览器。用 TEXT_PLAIN 是故意的：
+                // 如果让 Spring 按 JSON 序列化这个 String，它会给整个
+                // JSON 串再套一层引号并转义，前端解析直接崩。
+                emitter.send(SseEmitter.event().data(data, MediaType.TEXT_PLAIN));
+
+                // 顺手把 done 事件留下来，为了稍后落库
+                if (doneEvent == null) {
+                    try {
+                        Map<String, Object> evt = objectMapper.readValue(
+                                data, new TypeReference<Map<String, Object>>() {});
+                        if ("done".equals(evt.get("type"))) {
+                            doneEvent = evt;
+                        }
+                    } catch (Exception ignore) {
+                        // 转发是主线，解析失败不能影响它
+                    }
+                }
+            }
+        }
+
+        emitter.complete();
+
+        // ---------- 7. AI 的回复落库 ----------
+        // 只能放在流结束之后：流式过程中拿不到完整文本。
+        // 如果用户中途关页面，emitter.send 会抛异常并跳出循环，
+        // 这里就不会执行 —— 宁可少一条记录，也不要存半句话。
+        if (doneEvent != null) {
+            saveAssistantMessage(sid, doneEvent);
+        }
+
+        log.info("流式对话结束,sessionId:{},耗时:{}ms", sid, System.currentTimeMillis() - started);
+    }
+
+    /** 把 done 事件里的完整信息写进 t_chat_message */
+    private void saveAssistantMessage(String sessionId, Map<String, Object> done) {
+        try {
+            String answer = String.valueOf(done.getOrDefault("answer", ""));
+            if (answer.isBlank()) {
+                return;
+            }
+            Object conf = done.get("confidence");
+            Object latency = done.get("latencyMs");
+
+            chatMessageMapper.insert(ChatMessage.builder()
+                    .sessionId(sessionId)
+                    .role("assistant")
+                    .intent((String) done.get("intent"))
+                    .content(answer)
+                    .toolCalls(toJson(done.get("tools")))
+                    .confidence(conf instanceof Number
+                            ? new BigDecimal(conf.toString()) : BigDecimal.ZERO)
+                    .latencyMs(latency instanceof Number
+                            ? ((Number) latency).intValue() : null)
+                    .createTime(LocalDateTime.now())
+                    .build());
+        } catch (Exception e) {
+            // 落库失败不能影响用户已经看到的回答，只记日志
+            log.error("流式回答落库失败,sessionId:{}", sessionId, e);
+        }
+    }
+
+    /** 推事件给前端；连接已断时静默失败，不往外抛 */
+    private void sendQuietly(SseEmitter emitter, Map<String, Object> payload) {
+        try {
+            emitter.send(SseEmitter.event().data(
+                    objectMapper.writeValueAsString(payload), MediaType.TEXT_PLAIN));
+        } catch (Exception ignore) {
+            // 浏览器已经关了页面，属于正常情况
+        }
     }
 
     private List<Map<String, String>> loadHistory(String sessionId) {

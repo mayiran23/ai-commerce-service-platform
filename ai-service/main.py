@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from pydantic import BaseModel
 import rag
@@ -458,6 +459,22 @@ def intent_of(used_tools: list) -> str:
     return "CHAT"
 
 
+def build_tool_impl(user_id: int) -> dict:
+    """按本次请求的 userId 现场组装工具表。
+
+    key 必须和 tool_specs.TOOLS 里的 name **逐字一致**，
+    否则模型报的 name 在这里查不到，会被当成"未知工具"。
+    """
+    return {
+        "query_order": build_query_order(user_id),
+        "search_user_orders": build_search_orders(user_id),
+        "search_after_sale": build_search_after_sale(user_id),
+        "check_refund_eligible": build_check_eligible(user_id),
+        "create_after_sale": build_create_after_sale(user_id),
+        "search_refund_policy": build_search_refund_policy(),
+    }
+
+
 @app.post("/chat")
 def chat(req: ChatRequest):
     """核心接口：收一句话，让大模型答一句；需要查数据时它会自己调工具。"""
@@ -473,15 +490,8 @@ def chat(req: ChatRequest):
             messages.append({"role": h.role, "content": h.content})
     messages.append({"role": "user", "content": req.message})
     # 按本次请求的 userId 现场组装工具。
-    # 每多一个工具就在这里加一行,key 必须和 TOOLS 里的 name 逐字一致
-    tool_impl = {
-        "query_order": build_query_order(req.userId),
-        "search_user_orders": build_search_orders(req.userId),
-        "search_after_sale": build_search_after_sale(req.userId),
-        "check_refund_eligible": build_check_eligible(req.userId),
-        "create_after_sale": build_create_after_sale(req.userId),
-        "search_refund_policy": build_search_refund_policy(),
-    }
+    # 每多一个工具就在 build_tool_impl 里加一行
+    tool_impl = build_tool_impl(req.userId)
     used_tools = []
 
     # ---------- 工具调用循环 ----------
@@ -564,3 +574,192 @@ def chat(req: ChatRequest):
         "latencyMs": int((time.time() - started) * 1000),
         "tools": used_tools,
     }
+
+
+# ============================================================
+# 6. 流式接口（SSE）
+# ------------------------------------------------------------
+#  为什么另开一个 /chat/stream 而不是把 /chat 改掉：
+#    前端只要把 URL 换回去就能退回同步模式，流式出问题不会把演示搞挂。
+#
+#  事件协议（每条都是一个 JSON，靠 type 字段区分）：
+#    {"type":"meta",  "sessionId":"S2026..."}            ← 开头一次
+#    {"type":"delta", "text":"您"}                       ← 逐字推
+#    {"type":"tool",  "name":"query_order", ...}         ← 每次工具执行完
+#    {"type":"done",  "intent":"...","answer":"全文"}     ← 结尾一次
+#    {"type":"error", "message":"..."}                   ← 出错时
+#
+#  ⚠️ 为什么是 SSE 不是 WebSocket：
+#    这里是"一次请求、服务端单向多段返回"，SSE 刚好够用。
+#    WebSocket 还得额外管心跳、重连、鉴权，成本高而收益为零。
+# ============================================================
+
+def sse_pack(obj: dict) -> str:
+    """把 dict 打包成一条 SSE 帧。
+
+    SSE 帧格式是 `data: <内容>\\n\\n`：
+      · `data: ` 前缀必须有，浏览器和 Java 都靠它识别；
+      · 结尾必须是**两个**换行 —— 一个结束 data 行，一个结束整个事件。
+    少一个换行，前端会一直等下一块数据，表现就是"点了没反应"。
+    """
+    return "data: " + json.dumps(obj, ensure_ascii=False) + "\n\n"
+
+
+@app.post("/chat/stream")
+def chat_stream(req: ChatRequest):
+    """和 /chat 同样的业务，但边生成边往外推。
+
+    ⚠️ 和同步版的唯一行为差异：工具调用那一轮的 content 也会推给前端。
+       模型有时会先说"我帮您查一下"再调工具，这句话是连贯对话的一部分，
+       推出去比吞掉更自然。它也会被拼进最终 answer 一起落库。
+    """
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ]
+    for h in (req.history or []):
+        if h.role in ("user", "assistant") and h.content:
+            messages.append({"role": h.role, "content": h.content})
+    messages.append({"role": "user", "content": req.message})
+
+    tool_impl = build_tool_impl(req.userId)
+
+    def gen():
+        started = time.time()
+        used_tools = []
+        answer_parts = []
+
+        # 先把 sessionId 推给前端：新建会话时这个值必须立刻拿到，
+        # 否则第一条消息发完前端还是不知道自己在哪个会话里。
+        yield sse_pack({"type": "meta", "sessionId": req.sessionId})
+
+        try:
+            MAX_ROUNDS = 5
+            for _ in range(MAX_ROUNDS):
+                stream = client.chat.completions.create(
+                    model=MODEL,
+                    messages=messages,
+                    tools=TOOLS,
+                    temperature=0.3,
+                    timeout=60,      # 流式要留更长，不然长回答会被掐断
+                    stream=True,
+                )
+
+                content_buf = []
+                # 流式下 tool_calls 是**分片**到达的：函数名可能在第一个 chunk，
+                # 参数 JSON 被切成好几段。必须按 index 拼完整才能执行。
+                tool_calls = {}
+
+                for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+
+                    if delta.content:
+                        content_buf.append(delta.content)
+                        answer_parts.append(delta.content)
+                        yield sse_pack({"type": "delta", "text": delta.content})
+
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            slot = tool_calls.setdefault(
+                                tc.index, {"id": "", "name": "", "arguments": ""}
+                            )
+                            if tc.id:
+                                slot["id"] = tc.id
+                            if tc.function:
+                                if tc.function.name:
+                                    slot["name"] += tc.function.name
+                                if tc.function.arguments:
+                                    slot["arguments"] += tc.function.arguments
+
+                # 这一轮没有工具调用 → 说明上面推完的就是最终回答
+                if not tool_calls:
+                    break
+
+                # 有工具调用：先把模型的"调用意图"原样塞回历史
+                messages.append({
+                    "role": "assistant",
+                    "content": "".join(content_buf) or None,
+                    "tool_calls": [
+                        {
+                            "id": v["id"],
+                            "type": "function",
+                            "function": {"name": v["name"], "arguments": v["arguments"]},
+                        }
+                        for v in tool_calls.values()
+                    ],
+                })
+
+                # 再逐个执行，执行完立刻把结果推给前端（不用等回答生成）
+                for v in tool_calls.values():
+                    name = v["name"]
+                    try:
+                        args = json.loads(v["arguments"] or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+
+                    fn = tool_impl.get(name)
+                    t0 = time.time()
+                    if fn is None:
+                        result = {"ok": False, "error": f"未知工具：{name}"}
+                    else:
+                        result = fn(**args)
+                    cost_ms = int((time.time() - t0) * 1000)
+
+                    info = {
+                        "name": name,
+                        "args": args,
+                        "status": "ok" if result.get("ok") else "error",
+                        "ms": cost_ms,
+                        "result": result.get("summary")
+                                  or ("查到订单" if result.get("ok") else result.get("error")),
+                    }
+                    used_tools.append(info)
+                    yield sse_pack({"type": "tool", **info})
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": v["id"],
+                        "content": json.dumps(result, ensure_ascii=False),
+                    })
+            else:
+                # 跑满 MAX_ROUNDS 还在调工具（模型钻牛角尖）：
+                # 去掉 tools 再流式问最后一次，逼它输出一段人话
+                final = client.chat.completions.create(
+                    model=MODEL,
+                    messages=messages,
+                    temperature=0.3,
+                    timeout=30,
+                    stream=True,
+                )
+                for chunk in final:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        text = chunk.choices[0].delta.content
+                        answer_parts.append(text)
+                        yield sse_pack({"type": "delta", "text": text})
+
+        except Exception as e:
+            # 异常也必须按协议推出去。否则前端收不到 done，
+            # 会一直停留在"思考中…"，用户以为卡死了。
+            yield sse_pack({"type": "error", "message": f"AI 服务异常：{e}"})
+            return
+
+        yield sse_pack({
+            "type": "done",
+            "intent": intent_of(used_tools),
+            "confidence": 0.9 if used_tools else 0.0,
+            "latencyMs": int((time.time() - started) * 1000),
+            "tools": used_tools,
+            # 带完整文本回来，Java 拿它落库、前端拿它兜底
+            "answer": "".join(answer_parts),
+        })
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # nginx 认这个头：不缓冲这条响应，收到一块转一块
+            "X-Accel-Buffering": "no",
+        },
+    )

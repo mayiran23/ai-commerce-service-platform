@@ -270,6 +270,15 @@ function renderCtx(msgs, sess) {
 }
 
 /* ---------------- 发送 ---------------- */
+/* ============================================================
+   发送
+   ------------------------------------------------------------
+   USE_STREAM = true  → 走 /api/chat/stream，边生成边显示（打字机）
+   USE_STREAM = false → 走老的 /api/chat，等全部生成完再一次性显示
+   流式万一出问题，把这里改成 false 就能立刻退回，其他一行都不用动。
+   ============================================================ */
+var USE_STREAM = true;
+
 function send() {
   var input = UI.$('#input');
   var text = input.value.trim();
@@ -288,6 +297,107 @@ function send() {
   box.scrollTop = box.scrollHeight;
   input.value = '';
   UI.$('#btnSend').disabled = true;
+
+  if (USE_STREAM) sendStream(text);
+  else sendSync(text);
+}
+
+/* ---------------- 流式：边收边画 ---------------- */
+function sendStream(text) {
+  var box = UI.$('#msgs');
+  var answerText = '';   /* 累积完整回答，流结束时用来替换成正式气泡 + 落库对齐 */
+  var tools = [];
+  var meta = {};
+  var bubbleEl = null;
+
+  /* 第一次收到内容时才把"思考中…"换成真气泡，
+     这样工具调用阶段用户看到的还是"思考中"，不会闪一个空框 */
+  function ensureBubble() {
+    if (bubbleEl) return bubbleEl;
+    var p = UI.$('#pending');
+    if (p) p.remove();
+    box.insertAdjacentHTML('beforeend',
+      '<div class="msg bot" id="streaming"><div class="who">AI</div>'
+      + '<div class="bubble-wrap"><div class="bubble" id="streamingText"></div></div></div>');
+    bubbleEl = UI.$('#streamingText');
+    return bubbleEl;
+  }
+
+  Api.stream('/api/chat/stream', { sessionId: cur.sessionId, message: text }, function (evt) {
+    if (!evt || !evt.type) return;
+
+    if (evt.type === 'meta') {
+      /* 新建会话时后端当场生成 sessionId，必须立刻记住，
+         否则下一条提问会被当成另一个会话，多轮记忆就断了 */
+      if (evt.sessionId) cur.sessionId = evt.sessionId;
+      return;
+    }
+
+    if (evt.type === 'delta') {
+      var el = ensureBubble();
+      answerText += evt.text;
+      el.textContent = answerText;   /* 用 textContent 天然防 XSS */
+      box.scrollTop = box.scrollHeight;
+      return;
+    }
+
+    if (evt.type === 'tool') {
+      tools.push(evt);
+      return;
+    }
+
+    if (evt.type === 'done') {
+      meta = evt;
+      if (Array.isArray(evt.tools) && evt.tools.length) tools = evt.tools;
+      /* 兜底：一个 delta 都没收到（网络抖动）时，用全文一次性补上 */
+      if (!answerText && evt.answer) {
+        answerText = evt.answer;
+        ensureBubble().textContent = answerText;
+      }
+      return;
+    }
+
+    if (evt.type === 'error') {
+      ensureBubble().textContent = evt.message || '出错了，请稍后再试';
+    }
+  }).then(function () {
+    var node = UI.$('#streaming');
+    if (node) node.remove();
+    var pending = UI.$('#pending');
+    if (pending) pending.remove();
+
+    if (answerText) {
+      /* 流式期间是纯文本，结束后换成正式气泡：
+         带上意图标签、耗时、工具调用记录，样式和同步版完全一致 */
+      box.insertAdjacentHTML('beforeend', msgHtml({
+        role: 'assistant', content: answerText,
+        intent: meta.intent, confidence: meta.confidence,
+        latencyMs: meta.latencyMs, tools: tools || []
+      }));
+      box.scrollTop = box.scrollHeight;
+    }
+
+    loadSessions(false);
+    if (cur.sessionId) {
+      Api.get('/api/chat/history', { sessionId: cur.sessionId }).then(function (msgs) {
+        renderCtx(msgs || []);
+      });
+    }
+  }).catch(function (e) {
+    var pending = UI.$('#pending');
+    if (pending) pending.remove();
+    var streaming = UI.$('#streaming');
+    if (streaming) streaming.remove();
+    UI.toast(e.message || '发送失败', 'err');
+  }).then(function () {
+    UI.$('#btnSend').disabled = false;
+    UI.$('#input').focus();
+  });
+}
+
+/* ---------------- 同步：老逻辑，作为降级通道保留 ---------------- */
+function sendSync(text) {
+  var box = UI.$('#msgs');
 
   Api.post('/api/chat', { sessionId: cur.sessionId, message: text }).then(function (res) {
     cur.sessionId = res.sessionId;
@@ -308,7 +418,7 @@ function send() {
     UI.toast(e.message || '发送失败', 'err');
   }).then(function () {
     UI.$('#btnSend').disabled = false;
-    input.focus();
+    UI.$('#input').focus();
   });
 }
 
