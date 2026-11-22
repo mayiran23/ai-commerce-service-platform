@@ -105,9 +105,23 @@ def embed_texts(texts):
     return [d.embedding for d in resp.data]
 
 #存库＋主流程
+def _clear_dir(path: Path)->None:
+    """
+    清空目录里的内容，但保留目录本身。
+
+    为什么不能直接rmtree：容器化之后 chroma_db 往往是 volume 的挂载点
+    挂载点删不掉（Device or resource busy）, 只能清空里面的东西。
+    """
+    for child in path.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def main(reset=False):
     if reset and CHROMA_DIR.exists():
-        shutil.rmtree(CHROMA_DIR)          #--reset,先清空旧库
+        _clear_dir(CHROMA_DIR)          #--reset,先清空旧库
 
     chunks=load_sections()
     if not chunks:

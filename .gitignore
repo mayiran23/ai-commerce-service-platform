@@ -45,3 +45,5 @@ src/main/resources/application.properties
 # AI 助手工作目录（含记忆/临时文件，绝不提交）
 .workbuddy/
 .claude/
+# 重写 Dockerfile / compose 时保留的原版备份，不进仓库
+*.bak
